@@ -1,0 +1,55 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging and PyInstaller output
+build/
+dist/
+*.egg-info/
+*.egg
+*.spec
+*.exe
+
+# Local editor and agent settings
+.idea/
+.vscode/
+.claude/
+.codex/
+.agents/
+*.code-workspace
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Root-level working exports; canonical artifacts belong in sample/
+/*.klwp
+/*.zip
+

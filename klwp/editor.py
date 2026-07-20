@@ -1,0 +1,52 @@
+﻿"""Composition root for the desktop editor window."""
+
+from .shared import *  # noqa: F401,F403
+from .ui.bootstrap import BootstrapMixin
+from .ui.document import DocumentMixin
+from .preview.model import PreviewModelMixin
+from .render.canvas import CanvasRendererMixin
+from .render.layout import LayoutMixin
+from .render.compositor import CompositorMixin
+from .render.shapes import ShapeRendererMixin
+from .render.content import ContentRendererMixin
+from .render.text import TextRendererMixin
+from .ui.interaction import InteractionMixin
+from .ui.settings import SettingsMixin
+from .ui.properties import PropertyPanelMixin
+
+
+if HAS_TK:
+    class EditorApp(BootstrapMixin,
+            DocumentMixin,
+            PreviewModelMixin,
+            CanvasRendererMixin,
+            LayoutMixin,
+            CompositorMixin,
+            ShapeRendererMixin,
+            ContentRendererMixin,
+            TextRendererMixin,
+            InteractionMixin,
+            SettingsMixin,
+            PropertyPanelMixin,
+            tk.Tk):
+        CANVAS_W, CANVAS_H = 420, 760
+        HISTORY_LIMIT = 50
+        ICON_GLYPHS = {
+            "play": "▶", "pause": "⏸", "next": "⏭", "skip": "⏭",
+            "previous": "⏮", "wifi": "≋", "camera": "◎", "star": "★",
+            "airplane": "✈", "signal": "⟟",
+        }
+        _TEXT_SPACING_U = 4.0
+        PROP_FIELDS = [
+            ("internal_title", "名前"), ("position_anchor", "アンカー"),
+            ("position_offset_x", "X"), ("position_offset_y", "Y"),
+            ("shape_type", "図形種別"), ("shape_width", "幅"),
+            ("shape_height", "高さ"), ("shape_corners", "角丸"),
+            ("shape_offset", "扇形・弧の角度"),
+            ("paint_color", "色 (#AARRGGBB)"),
+            ("text_size", "文字サイズ"), ("text_family", "フォント"),
+            ("icon_icon", "アイコン名"), ("icon_size", "アイコンサイズ"),
+            ("bitmap_width", "画像幅"),
+            ("bitmap_alpha", "画像不透明度 (0-100)"),
+        ]
+
