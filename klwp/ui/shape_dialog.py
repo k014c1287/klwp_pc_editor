@@ -1,6 +1,7 @@
 """Dialog used to create one of the supported KLWP shape modules."""
 
 from ..shared import *  # noqa: F401,F403
+from .color_control import ColorControl
 
 
 class ShapeDialog:
@@ -13,7 +14,7 @@ class ShapeDialog:
     def show(self):
         window = tk.Toplevel(self._owner)
         window.title("図形を追加")
-        window.geometry("440x430")
+        window.geometry("460x520")
         window.transient(self._owner)
         window.grab_set()
         self._widgets['window'] = window
@@ -21,6 +22,7 @@ class ShapeDialog:
         form.pack(fill="both", expand=True)
         self._shape_selector(form)
         self._numeric_fields(form)
+        self._color_field(form)
         self._path_field(form)
         self._buttons(form)
         self._load_defaults()
@@ -59,16 +61,24 @@ class ShapeDialog:
 
     def _path_field(self, form):
         ttk.Label(form, text="Path（100×100 SVG座標）").grid(
-            row=5, column=0, columnspan=2, sticky="w", pady=(10, 2))
+            row=6, column=0, columnspan=2, sticky="w", pady=(10, 2))
         text = tk.Text(form, height=7, wrap="word", font=("Consolas", 9))
-        text.grid(row=6, column=0, columnspan=2, sticky="nsew", pady=(0, 6))
+        text.grid(row=7, column=0, columnspan=2, sticky="nsew", pady=(0, 6))
         form.columnconfigure(1, weight=1)
-        form.rowconfigure(6, weight=1)
+        form.rowconfigure(7, weight=1)
         self._widgets['path_text'] = text
+
+    def _color_field(self, form):
+        ttk.Label(form, text="色").grid(
+            row=5, column=0, sticky="nw", pady=4)
+        control = ColorControl(form, "#80FFFFFF")
+        frame = control.build()
+        frame.grid(row=5, column=1, sticky="ew", pady=4)
+        self._widgets['color_control'] = control
 
     def _buttons(self, form):
         buttons = ttk.Frame(form)
-        buttons.grid(row=7, column=0, columnspan=2, sticky="e", pady=(8, 0))
+        buttons.grid(row=8, column=0, columnspan=2, sticky="e", pady=(8, 0))
         window = self._widgets['window']
         ttk.Button(buttons, text="キャンセル", command=window.destroy).pack(
             side="left", padx=4)
@@ -83,6 +93,9 @@ class ShapeDialog:
         text = self._widgets['path_text']
         text.delete("1.0", "end")
         text.insert("1.0", specification.get("shape_path", ""))
+        default_item = make_shape_module(shape_name)
+        color = default_item.get("paint_color", "#80FFFFFF")
+        self._widgets['color_control'].replace_color(color)
 
     def _add(self):
         shape_name = self._widgets['shape_variable'].get()
@@ -92,6 +105,7 @@ class ShapeDialog:
             for key, variable in self._widgets['fields'].items())
         if not valid or not self._apply_path(item):
             return
+        item["paint_color"] = self._widgets['color_control'].encoded_color()
         owner = self._owner
         memory = owner.memory
         target = owner._target_list()

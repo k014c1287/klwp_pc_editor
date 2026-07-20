@@ -22,6 +22,7 @@ class CompositorLeafMixin:
         if self._paint_root_opacity(request):
             return
         placement = self._item_placement(request)
+        self._remember_item_bounds(request, placement)
         self._register_events(request, placement)
         self._paint_shadow(request, placement)
         self._paint_leaf(request, placement)
@@ -127,6 +128,15 @@ class CompositorLeafMixin:
             placement["width"], placement["height"],
         )
         self.memory['_event_regions'].append((request["item"], bounds, events))
+
+    def _remember_item_bounds(self, request, placement):
+        memory = self.memory
+        bounds = (
+            placement["horizontal"], placement["vertical"],
+            placement["width"], placement["height"],
+        )
+        entries = memory.optional("_item_bounds", [])
+        entries.append((request["item"], bounds))
 
     def _paint_shadow(self, request, placement):
         shadow = self._value(

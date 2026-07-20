@@ -1,6 +1,7 @@
 """Render the document into Pillow and present it on the Tk canvas."""
 
 from ..shared import *  # noqa: F401,F403
+from ..resize import ResizeHandleSet
 
 
 class CanvasRendererMixin:
@@ -47,6 +48,20 @@ class CanvasRendererMixin:
             horizontal * scale, vertical * scale,
             (horizontal + width) * scale, (vertical + height) * scale,
             outline="#00E5FF", width=2, dash=(4, 3))
+        self._paint_resize_handles(canvas, selected, bounds, scale)
+
+    @staticmethod
+    def _paint_resize_handles(canvas, item, bounds, scale):
+        if not ResizeHandleSet.supports(item):
+            return
+        radius = 4
+        for _name, horizontal, vertical in ResizeHandleSet.positions(bounds):
+            pixel_horizontal = horizontal * scale
+            pixel_vertical = vertical * scale
+            canvas.create_rectangle(
+                pixel_horizontal - radius, pixel_vertical - radius,
+                pixel_horizontal + radius, pixel_vertical + radius,
+                fill="#FFFFFF", outline="#00A8C8", width=1)
 
     def render_to_image(self, pixel_width, pixel_height):
         """Render the current preset without requiring a Tk window."""
@@ -57,6 +72,7 @@ class CanvasRendererMixin:
         self.memory['_scale'] = scale
         self.memory['_doc'] = (document_width, document_height)
         self.memory['_event_regions'] = []
+        self.memory['_item_bounds'] = []
         width, height = int(pixel_width), int(pixel_height)
         image = Image.new("RGBA", (width, height), (16, 16, 24, 255))
         archive = self.memory['archive']

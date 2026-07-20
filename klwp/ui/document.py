@@ -6,7 +6,7 @@ from .shape_dialog import ShapeDialog
 from .tree import ModuleTreeBuilder
 
 
-class DocumentMixin:
+class DocumentLifecycleMixin:
     def _confirm_discard(self):
         if not self.memory['dirty']:
             return True
@@ -54,6 +54,8 @@ class DocumentMixin:
 
     def _after_document_loaded(self):
         self.memory['selected'] = None
+        self.memory['drag_state'] = None
+        self.memory['resize_state'] = None
         self.memory['photo_cache'].clear()
         self.memory['font_cache'].clear()
         self._reset_preview_state()
@@ -88,6 +90,7 @@ class DocumentMixin:
         name = basename(path)
         self.memory['status'].config(text=f"保存しました: {name}")
 
+class DocumentMixin(DocumentLifecycleMixin):
     def _snapshot_archive(self):
         archive = self.memory['archive']
         return ArchiveSnapshot(
@@ -105,6 +108,7 @@ class DocumentMixin:
         archive["extras"] = dict(snapshot["extras"])
         self.memory['selected'] = None
         self.memory['drag_state'] = None
+        self.memory['resize_state'] = None
         self.memory['photo_cache'].clear()
         self.memory['font_cache'].clear()
         self._reset_preview_state()

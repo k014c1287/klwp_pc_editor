@@ -1,6 +1,7 @@
 """Build the selected module's property controls."""
 
 from ..shared import *  # noqa: F401,F403
+from .color_control import ColorControl
 
 
 class AnchorChoices:
@@ -85,6 +86,7 @@ class PropertyPanelBuilder:
         owner = self._owner
         memory = owner.memory
         memory['_prop_vars'] = {}
+        memory['_prop_color_controls'] = {}
         grid = ttk.Frame(memory['prop_frame'])
         grid.pack(fill="x")
         row = 0
@@ -102,7 +104,10 @@ class PropertyPanelBuilder:
             return 0
         ttk.Label(grid, text=label).grid(
             row=row, column=0, sticky="w", pady=2)
-        builders = {"position_anchor": self._anchor_field}
+        builders = {
+            "position_anchor": self._anchor_field,
+            "paint_color": self._color_field,
+        }
         builder = builders.get(key, self._entry_field)
         builder(grid, row, key)
         return 1
@@ -134,6 +139,16 @@ class PropertyPanelBuilder:
         selector.bind(
             "<<ComboboxSelected>>", self._property_callback(key, variable))
         memory['_prop_vars'][key] = variable
+
+    def _color_field(self, grid, row, key):
+        owner = self._owner
+        item = self._item
+        memory = owner.memory
+        callback = lambda value: owner._apply_property_value(key, value)
+        control = ColorControl(grid, item.get(key, "#FFFFFFFF"), callback)
+        frame = control.build()
+        frame.grid(row=row, column=1, sticky="ew", pady=2)
+        memory['_prop_color_controls'][key] = control
 
     def _property_callback(self, key, variable):
         owner = self._owner
