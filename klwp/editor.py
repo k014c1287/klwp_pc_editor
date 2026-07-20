@@ -43,7 +43,7 @@ if HAS_TK:
             ("shape_type", "図形種別"), ("shape_width", "幅"),
             ("shape_height", "高さ"), ("shape_corners", "角丸"),
             ("shape_offset", "扇形・弧の角度"),
-            ("paint_color", "色 (#AARRGGBB)"),
+            ("paint_color", "色"),
             ("text_size", "文字サイズ"), ("text_family", "フォント"),
             ("icon_icon", "アイコン名"), ("icon_size", "アイコンサイズ"),
             ("bitmap_width", "画像幅"),

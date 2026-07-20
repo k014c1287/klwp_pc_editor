@@ -30,6 +30,7 @@ class BootstrapMixin:
         memory['font_cache'] = {}
         memory['device_res'] = (1080, 2400)
         memory['drag_state'] = None
+        memory['resize_state'] = None
 
     def _initialize_preview_memory(self):
         memory = self.memory

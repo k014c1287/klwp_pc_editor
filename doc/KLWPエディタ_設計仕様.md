@@ -47,10 +47,12 @@ classDiagram
         -_initialize_preview_memory()
         -_initialize_history_memory()
     }
-    class DocumentMixin {
+    class DocumentLifecycleMixin {
         +cmd_new()
         +cmd_open()
         +cmd_save()
+    }
+    class DocumentMixin {
         +cmd_undo()
         +cmd_redo()
         -_refresh_all()
@@ -74,7 +76,17 @@ classDiagram
     class ContentRendererMixin
     class TextRendererMixin
     class PreviewInteractionMixin
+    class ResizeInteractionMixin
     class InteractionMixin
+    class ResizeHandleSet {
+        +supports(item)
+        +positions(bounds)
+        +hit(bounds, horizontal, vertical, tolerance)
+    }
+    class ResizeSession {
+        +apply(horizontal, vertical)
+        +changed()
+    }
     class SettingsMixin
     class PropertyPanelMixin
     class ApplicationMemory {
@@ -89,6 +101,7 @@ classDiagram
 
     TkRoot <|-- EditorApp
     BootstrapMixin <|-- EditorApp
+    DocumentLifecycleMixin <|-- DocumentMixin
     DocumentMixin <|-- EditorApp
     PreviewModelMixin <|-- EditorApp
     CanvasRendererMixin <|-- EditorApp
@@ -105,6 +118,10 @@ classDiagram
     ShapeGeometryMixin <|-- ShapeRendererMixin
     ShapeMaskMixin <|-- ShapeRendererMixin
     PreviewInteractionMixin <|-- InteractionMixin
+    ResizeInteractionMixin <|-- InteractionMixin
+    ResizeInteractionMixin ..> ResizeHandleSet
+    ResizeInteractionMixin ..> ResizeSession
+    CanvasRendererMixin ..> ResizeHandleSet : selection handles
 
     EditorApp *-- ApplicationMemory : memory
     BootstrapMixin ..> EditorWindowBuilder : builds
@@ -444,6 +461,18 @@ classDiagram
         +to_display(internal_value)
         +to_internal(display_value)
     }
+    class ColorControl {
+        +build()
+        +replace_color(value)
+        +encoded_color()
+    }
+    class KlwpColor {
+        +encoded()
+        +chooser_color()
+        +opacity_percentage()
+        +replace_chooser_color(value)
+        +replace_opacity_percentage(value)
+    }
     class JsonEditorDialog {
         +show()
     }
@@ -476,6 +505,9 @@ classDiagram
     EditorApp ..> ModuleTreeBuilder : refresh tree
     EditorApp ..> PropertyPanelBuilder : selected item
     PropertyPanelBuilder ..> AnchorChoices : anchor combobox conversion
+    PropertyPanelBuilder ..> ColorControl : visual color editing
+    ShapeDialog ..> ColorControl : creation color
+    ColorControl *-- KlwpColor : AARRGGBB value
     EditorApp ..> JsonEditorDialog : raw JSON edit
     EditorApp ..> ShapeDialog : add shape
     EditorApp ..> BackgroundDialog : background
@@ -742,6 +774,44 @@ sequenceDiagram
     Canvas-->>User: 最寄りページで停止
 ```
 
+### 3.7 図形・画像の直接リサイズ
+
+編集モードで選択したShapeまたはBitmapには8方向のハンドルを表示します。Shapeはドラッグした軸を個別に変更し、Bitmapはどのハンドルでも現在の縦横比を維持します。サイズ変更後はアンカーに応じてオフセットを補正し、ドラッグしていない反対側の縁を固定します。描画時に全モジュールの境界を記録するため、Overlap内の子要素も最前面から選択・リサイズできます。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Canvas as CanvasRendererMixin
+    participant Interaction as ResizeInteractionMixin
+    participant Handles as ResizeHandleSet
+    participant Session as ResizeSession
+    participant Item as ShapeまたはBitmap
+    participant History as HistoryTimeline
+
+    Canvas->>Handles: positions(selected_bounds)
+    Handles-->>Canvas: 8方向のハンドル座標
+    Canvas-->>User: 選択枠とハンドルを表示
+    User->>Interaction: 縁またはハンドルを押す
+    Interaction->>Handles: hit(bounds, pointer, tolerance)
+    Handles-->>Interaction: N・E・S・Wまたは四隅
+    Interaction->>Session: ResizeSession(item, handle, bounds, base_size)
+    loop ドラッグ中
+        User->>Interaction: drag(pointer)
+        Interaction->>Session: apply(pointer)
+        alt ShapeModule
+            Session->>Item: shape_widthとshape_heightを個別更新
+        else BitmapModule
+            Session->>Item: 比率を固定してbitmap_widthだけ更新
+        end
+        Interaction->>Item: アンカーに応じて位置オフセットを補正
+        Interaction->>Canvas: _render()
+        Canvas-->>User: サイズ変更へ追従
+    end
+    User->>Interaction: release()
+    Interaction->>History: record(snapshot)
+```
+
 ## 4. 状態とデータの境界
 
 ### 4.1 `ApplicationMemory` の主な内容
@@ -751,8 +821,8 @@ sequenceDiagram
 | ドキュメント | `archive`, `device_res`, `selected` | `archive` の内容だけ `.klwp` に保存 |
 | 履歴 | `history`, `dirty` | 保存しない |
 | UI | `tree`, `canvas`, `status`, 各ボタン | 保存しない |
-| キャッシュ | `photo_cache`, `font_cache`, `_photo` | 保存しない |
-| 編集操作 | `drag_state` | 保存しない |
+| キャッシュ | `photo_cache`, `font_cache`, `_photo`, `_item_bounds` | 保存しない |
+| 編集操作 | `drag_state`, `resize_state` | 保存しない |
 | プレビュー | `preview_scroll`, `preview_switches`, `preview_switch_progress` | 保存しない |
 | アニメーション | `_switch_transitions`, `_scroll_transition`, `_loop_started_at` | 保存しない |
 | イベント | `_event_regions`, `interaction_drag` | 保存しない |
@@ -784,5 +854,6 @@ sequenceDiagram
 - KLWP ZIP の格納項目を変更した場合は「2.2」と「3.4」を更新する。
 - 描画順、値解決順、子要素の合成方法を変更した場合は「2.3」と「3.2」を更新する。
 - 新しいアニメーション反応・アクションを追加した場合は「2.4」「3.5」「3.6」を更新する。
+- リサイズ対象・ハンドル・比率制約を変更した場合は「2.1」と「3.7」を更新する。
 - `ApplicationMemory` の状態分類を増やした場合は「4.1」を更新する。
 - Mermaid 図のクラス名とメソッド名は、コード上の識別子と一致させる。

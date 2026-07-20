@@ -9,6 +9,8 @@ from pathlib import Path
 
 import klwp_editor as ke
 from klwp.ui.property_panel import AnchorChoices
+from klwp.ui.color_control import KlwpColor
+from klwp.resize import ResizeHandleSet, ResizeSession
 
 
 ROOT = Path(__file__).resolve().parent
@@ -75,6 +77,57 @@ class PropertyPanelTests(unittest.TestCase):
         self.assertEqual(
             tuple(map(AnchorChoices.to_display, expected_values)),
             expected_labels)
+
+    def test_visual_color_value_preserves_rgb_and_opacity(self):
+        color = KlwpColor("#80aabbcc")
+
+        self.assertEqual(color.encoded(), "#80AABBCC")
+        self.assertEqual(color.chooser_color(), "#AABBCC")
+        self.assertEqual(color.opacity_percentage(), 50)
+        color.replace_chooser_color("#102030")
+        self.assertEqual(color.encoded(), "#80102030")
+        color.replace_opacity_percentage(100)
+        self.assertEqual(color.encoded(), "#FF102030")
+
+    def test_visual_color_value_accepts_rgb_and_invalid_input(self):
+        self.assertEqual(KlwpColor("#123456").encoded(), "#FF123456")
+        self.assertEqual(KlwpColor("invalid").encoded(), "#FFFFFFFF")
+
+
+class ResizeTests(unittest.TestCase):
+    def test_handle_hit_detection_includes_edges_and_corners(self):
+        bounds = (100.0, 200.0, 300.0, 150.0)
+
+        self.assertEqual(ResizeHandleSet.hit(bounds, 100, 200, 8), "NW")
+        self.assertEqual(ResizeHandleSet.hit(bounds, 250, 200, 8), "N")
+        self.assertEqual(ResizeHandleSet.hit(bounds, 400, 275, 8), "E")
+        self.assertIsNone(ResizeHandleSet.hit(bounds, 250, 275, 8))
+
+    def test_shape_resize_changes_width_and_height_independently(self):
+        item = ke.make_shape_module("長方形")
+        session = ResizeSession(
+            item, "SE", (200.0, 100.0),
+            (0.0, 0.0, 200.0, 100.0), (200.0, 100.0))
+
+        target = session.apply(260.0, 140.0)
+
+        self.assertEqual(target, (0.0, 0.0, 260.0, 140.0))
+        self.assertEqual(item["shape_width"], 260.0)
+        self.assertEqual(item["shape_height"], 140.0)
+
+    def test_bitmap_resize_preserves_source_aspect_ratio(self):
+        item = ke.make_module("bitmap")
+        item["bitmap_width"] = 200.0
+        session = ResizeSession(
+            item, "S", (100.0, 100.0),
+            (0.0, 0.0, 200.0, 100.0), (200.0, 100.0))
+
+        left, top, width, height = session.apply(100.0, 150.0)
+
+        self.assertEqual((left, top), (-50.0, 0.0))
+        self.assertEqual(width / height, 2.0)
+        self.assertEqual(item["bitmap_width"], 300.0)
+        self.assertNotIn("bitmap_height", item)
 
 
 class ArchiveTests(unittest.TestCase):
@@ -394,6 +447,47 @@ class RenderTests(unittest.TestCase):
         width, height = renderer._item_size(bitmap, renderer._root_globals())
         self.assertAlmostEqual(width, 525.0)
         self.assertAlmostEqual(height, 525.0 * 1400.0 / 1121.0, places=4)
+
+    def test_west_resize_keeps_opposite_edge_fixed_for_center_anchor(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        item = ke.make_shape_module("長方形")
+        item["position_anchor"] = "CENTER"
+        archive.modules().append(item)
+        renderer = self.renderer(archive)
+        renderer.memory['_doc'] = renderer._doc_size()
+        bounds = renderer._bounds(item)
+        left, top, width, height = bounds
+        session = ResizeSession(
+            item, "W", (left, top + height / 2), bounds,
+            renderer._base_item_size(item, renderer._root_globals()))
+
+        target = session.apply(left - 50.0, top + height / 2)
+        renderer._align_resized_item(session, target)
+        resized_left, resized_top, resized_width, resized_height = \
+            renderer._bounds(item)
+
+        self.assertAlmostEqual(resized_left, left - 50.0, places=1)
+        self.assertAlmostEqual(resized_left + resized_width, left + width, places=1)
+        self.assertAlmostEqual(resized_top, top, places=1)
+        self.assertAlmostEqual(resized_height, height, places=1)
+
+    def test_nested_shape_has_recorded_bounds_for_direct_resize(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        layer = ke.make_module("layer")
+        child = ke.make_shape_module("長方形")
+        layer["viewgroup_items"].append(child)
+        archive.modules().append(layer)
+        renderer = self.renderer(archive)
+
+        renderer.render_to_image(360, 600)
+
+        bounds = renderer._bounds(child)
+        self.assertIsNotNone(bounds)
+        self.assertEqual(renderer._hit_item(
+            bounds[0] + bounds[2] / 2,
+            bounds[1] + bounds[3] / 2), child)
 
     def test_all_dropdown_shapes_produce_nonempty_masks(self):
         archive = ke.KlwpArchive()

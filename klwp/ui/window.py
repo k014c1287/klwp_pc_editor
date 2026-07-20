@@ -99,6 +99,7 @@ class EditorWindowBuilder:
         canvas.bind("<ButtonPress-1>", owner._on_canvas_press)
         canvas.bind("<B1-Motion>", owner._on_canvas_drag)
         canvas.bind("<ButtonRelease-1>", owner._on_canvas_release)
+        canvas.bind("<Motion>", owner._on_canvas_motion)
         owner.memory['canvas'] = canvas
 
     def _animation_controls(self, frame):

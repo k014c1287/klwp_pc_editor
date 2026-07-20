@@ -189,7 +189,7 @@ class LayoutMixin:
     def _bounds(self, item):
         archive = self.memory['archive']
         if item not in archive.modules():
-            return None
+            return self._recorded_bounds(item)
         document_width, document_height = self.memory['_doc']
         global_values = self._root_globals()
         width, height = self._item_size(item, global_values)
@@ -203,3 +203,12 @@ class LayoutMixin:
         horizontal += animation["dx"]
         vertical += animation["dy"]
         return horizontal, vertical, width, height
+
+    def _recorded_bounds(self, item):
+        memory = self.memory
+        entries = reversed(memory.optional("_item_bounds", []))
+        matches = filter(lambda entry: entry[0] is item, entries)
+        match = next(matches, None)
+        if match is None:
+            return None
+        return match[1]

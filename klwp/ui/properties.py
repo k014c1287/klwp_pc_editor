@@ -16,11 +16,14 @@ class PropertyPanelMixin:
         PropertyPanelBuilder(self, self.memory['selected']).build()
 
     def _apply_prop(self, key, variable):
+        self._apply_property_value(key, variable.get())
+
+    def _apply_property_value(self, key, raw):
         item = self.memory['selected']
         if item is None:
             return
         value = self._converted_property(
-            variable.get(), item.get(key), key)
+            raw, item.get(key), key)
         if value is self.INVALID:
             return
         item[key] = value

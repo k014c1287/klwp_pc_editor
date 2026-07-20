@@ -1,6 +1,7 @@
 """Handle preview animation, taps, swipes and canvas dragging."""
 
 from ..shared import *  # noqa: F401,F403
+from .resize_interaction import ResizeInteractionMixin
 
 
 class PreviewInteractionMixin:
@@ -17,6 +18,7 @@ class PreviewInteractionMixin:
 
     def _on_interaction_mode_changed(self):
         self.memory['drag_state'] = None
+        self.memory['resize_state'] = None
         self.memory['interaction_drag'] = None
         if self._interaction_enabled():
             self._set_status(
@@ -198,17 +200,20 @@ class PreviewInteractionMixin:
         left, top, width, height = bounds
         return left <= horizontal <= left + width and top <= vertical <= top + height
 
-class InteractionMixin(PreviewInteractionMixin):
+class InteractionMixin(PreviewInteractionMixin, ResizeInteractionMixin):
     def _on_canvas_press(self, event):
         if self._interaction_enabled():
             self._start_interaction_drag(event)
             return
         scale = self.memory['_scale']
         horizontal, vertical = event.x / scale, event.y / scale
+        if self._start_resize(horizontal, vertical):
+            return
         hit = self._hit_item(horizontal, vertical)
         if hit is None:
             return
         self.memory['selected'] = hit
+        self.memory['resize_state'] = None
         self.memory['drag_state'] = (
             horizontal, vertical,
             float(hit.get("position_offset_x", 0) or 0),
@@ -226,16 +231,24 @@ class InteractionMixin(PreviewInteractionMixin):
         }
 
     def _hit_item(self, horizontal, vertical):
-        modules = reversed(self.memory['archive'].modules())
+        memory = self.memory
+        entries = reversed(memory.optional("_item_bounds", []))
         candidates = filter(
-            lambda item: self._inside_item(item, horizontal, vertical),
-            modules)
-        return next(candidates, None)
+            lambda entry: self._inside_bounds(entry[1], horizontal, vertical),
+            entries)
+        match = next(candidates, None)
+        if match is None:
+            return None
+        return match[0]
 
     def _inside_item(self, item, horizontal, vertical):
         bounds = self._bounds(item)
         if bounds is None:
             return False
+        return self._inside_bounds(bounds, horizontal, vertical)
+
+    @staticmethod
+    def _inside_bounds(bounds, horizontal, vertical):
         left, top, width, height = bounds
         return left <= horizontal <= left + width and top <= vertical <= top + height
 
@@ -258,6 +271,8 @@ class InteractionMixin(PreviewInteractionMixin):
     def _on_canvas_drag(self, event):
         if self._interaction_enabled() and self.memory['interaction_drag']:
             self._drag_preview(event)
+            return
+        if self._drag_resize(event):
             return
         if not self.memory['drag_state'] or self.memory['selected'] is None:
             return
@@ -304,6 +319,8 @@ class InteractionMixin(PreviewInteractionMixin):
     def _on_canvas_release(self, event):
         if self._interaction_enabled() and self.memory['interaction_drag']:
             self._release_interaction(event)
+            return
+        if self._finish_resize():
             return
         if self.memory['drag_state']:
             self.memory['drag_state'] = None
