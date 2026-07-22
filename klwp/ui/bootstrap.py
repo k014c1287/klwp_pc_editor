@@ -1,6 +1,7 @@
 """Initialize the editor window and its first-class application memory."""
 
 from ..shared import *  # noqa: F401,F403
+from ..preview.values import default_preview_values
 from .window import EditorWindowBuilder
 
 
@@ -29,6 +30,7 @@ class BootstrapMixin:
         memory['photo_cache'] = {}
         memory['font_cache'] = {}
         memory['device_res'] = (1080, 2400)
+        memory['preview_values'] = default_preview_values()
         memory['drag_state'] = None
         memory['resize_state'] = None
 

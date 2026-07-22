@@ -49,7 +49,7 @@ FORMULA_TOKEN_PATTERN = re.compile(
     r'''\s*(?:(?P<string>"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|'''
     r'''(?P<color>\#[0-9A-Fa-f]{6,8})|'''
     r'''(?P<number>(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)|'''
-    r'''(?P<operator>!=|<=|>=|[=<>+\-*/|&(),])|'''
+    r'''(?P<operator>!=|~=|<=|>=|[=<>+\-*/|&(),])|'''
     r'''(?P<identifier>[^\s=<>+\-*/|&(),]+))'''
 )
 
@@ -190,6 +190,7 @@ class BinaryOperations:
             "&": BinaryOperations.logical_and,
             "=": BinaryOperations.equal,
             "!=": BinaryOperations.not_equal,
+            "~=": BinaryOperations.regular_expression,
             "<": BinaryOperations.less_than,
             ">": BinaryOperations.greater_than,
             "<=": BinaryOperations.less_than_or_equal,
@@ -219,6 +220,11 @@ class BinaryOperations:
     @staticmethod
     def not_equal(left, right):
         return not BinaryOperations.equal(left, right)
+
+    @staticmethod
+    def regular_expression(left, right):
+        pattern = str(right)
+        return re.search(pattern, str(left), re.IGNORECASE) is not None
 
     @staticmethod
     def less_than(left, right):
@@ -264,6 +270,208 @@ class BinaryOperations:
         return ""
 
 
+class PreviewFormulaValues:
+    def __init__(self, context):
+        self._context = context
+
+    def value(self, section, arguments, defaults, fallback):
+        key = arguments.key()
+        return self.named(section, key, defaults, fallback)
+
+    def named(self, section, key, defaults, fallback):
+        context = self._context
+        global_values = context["globals"]
+        preview = global_values.optional("__preview__", {})
+        values = self._section(preview, section)
+        if key in values:
+            return values[key]
+        return defaults.get(key, fallback)
+
+    @staticmethod
+    def _section(preview, section):
+        if not isinstance(preview, dict):
+            return {}
+        values = preview.get(section, {})
+        if isinstance(values, dict):
+            return values
+        return {}
+
+
+class MathematicsUtilities:
+    @staticmethod
+    def apply(arguments):
+        mode = arguments.key()
+        handlers = {
+            "ceil": MathematicsUtilities._ceil,
+            "floor": MathematicsUtilities._floor,
+            "sqrt": MathematicsUtilities._sqrt,
+            "round": MathematicsUtilities._round,
+            "min": MathematicsUtilities._minimum,
+            "max": MathematicsUtilities._maximum,
+            "abs": MathematicsUtilities._absolute,
+            "pow": MathematicsUtilities._power,
+            "sin": MathematicsUtilities._sine,
+            "cos": MathematicsUtilities._cosine,
+            "tan": MathematicsUtilities._tangent,
+        }
+        handler = handlers.get(mode, MathematicsUtilities._round)
+        return handler(arguments)
+
+    @staticmethod
+    def _number(arguments):
+        return _as_number(arguments.optional(1, arguments.optional(0)))
+
+    @staticmethod
+    def _ceil(arguments):
+        return math.ceil(MathematicsUtilities._number(arguments))
+
+    @staticmethod
+    def _floor(arguments):
+        return math.floor(MathematicsUtilities._number(arguments))
+
+    @staticmethod
+    def _sqrt(arguments):
+        return math.sqrt(MathematicsUtilities._number(arguments))
+
+    @staticmethod
+    def _round(arguments):
+        digits = int(_as_number(arguments.optional(2)))
+        return round(MathematicsUtilities._number(arguments), digits)
+
+    @staticmethod
+    def _minimum(arguments):
+        return min(map(_as_number, arguments._values[1:]))
+
+    @staticmethod
+    def _maximum(arguments):
+        return max(map(_as_number, arguments._values[1:]))
+
+    @staticmethod
+    def _absolute(arguments):
+        return abs(MathematicsUtilities._number(arguments))
+
+    @staticmethod
+    def _power(arguments):
+        exponent = _as_number(arguments.optional(2))
+        return math.pow(MathematicsUtilities._number(arguments), exponent)
+
+    @staticmethod
+    def _sine(arguments):
+        radians = math.radians(MathematicsUtilities._number(arguments))
+        return math.sin(radians)
+
+    @staticmethod
+    def _cosine(arguments):
+        radians = math.radians(MathematicsUtilities._number(arguments))
+        return math.cos(radians)
+
+    @staticmethod
+    def _tangent(arguments):
+        radians = math.radians(MathematicsUtilities._number(arguments))
+        return math.tan(radians)
+
+
+class TextConversions:
+    @staticmethod
+    def apply(arguments):
+        mode = arguments.key()
+        text = _formula_text(arguments.optional(1))
+        handlers = {
+            "low": str.lower, "l": str.lower,
+            "up": str.upper, "u": str.upper,
+            "cap": str.title, "c": str.title,
+            "len": len,
+        }
+        handler = handlers.get(mode)
+        if handler is not None:
+            return handler(text)
+        return TextConversions._advanced(mode, text, arguments)
+
+    @staticmethod
+    def _advanced(mode, text, arguments):
+        if mode == "split":
+            return TextConversions._split(text, arguments)
+        if mode == "count":
+            return text.count(_formula_text(arguments.optional(2)))
+        if mode in ("cut", "ell"):
+            return TextConversions._cut(mode, text, arguments)
+        return ""
+
+    @staticmethod
+    def _split(text, arguments):
+        separator = _formula_text(arguments.optional(2, "#"))
+        parts = text.split(separator)
+        index = int(_as_number(arguments.optional(3, 0)))
+        if 0 <= index < len(parts):
+            return parts[index]
+        return ""
+
+    @staticmethod
+    def _cut(mode, text, arguments):
+        start = int(_as_number(arguments.optional(2, 0)))
+        if len(arguments) < 4:
+            result = TextConversions._edge_cut(text, start)
+            return TextConversions._ellipsized(mode, text, result)
+        length = int(_as_number(arguments.optional(3, 0)))
+        result = text[start:start + length]
+        return TextConversions._ellipsized(mode, text, result)
+
+    @staticmethod
+    def _edge_cut(text, amount):
+        if amount < 0:
+            return text[amount:]
+        return text[:amount]
+
+    @staticmethod
+    def _ellipsized(mode, source, result):
+        if mode == "ell" and len(result) < len(source):
+            return result + "…"
+        return result
+
+
+class ColorEditor:
+    @staticmethod
+    def apply(arguments):
+        color = ColorEditor._channels(arguments.optional(0))
+        mode = arguments.key(1)
+        if mode == "invert":
+            return ColorEditor._invert(color)
+        if mode == "contrast":
+            return ColorEditor._contrast(color)
+        if mode == "alpha":
+            percentage = _as_number(arguments.optional(2, 100))
+            alpha = int(percentage * 255.0 / 100.0 + 0.5)
+            return ColorEditor._encoded((alpha,) + color[1:])
+        return ColorEditor._encoded(color)
+
+    @staticmethod
+    def _channels(value):
+        hexadecimal = str(value).lstrip("#")
+        if len(hexadecimal) == 6:
+            hexadecimal = "FF" + hexadecimal
+        if len(hexadecimal) != 8:
+            hexadecimal = "FFFFFFFF"
+        return tuple(int(hexadecimal[index:index + 2], 16)
+                     for index in range(0, 8, 2))
+
+    @staticmethod
+    def _invert(color):
+        return ColorEditor._encoded(
+            (color[0], 255 - color[1], 255 - color[2], 255 - color[3]))
+
+    @staticmethod
+    def _contrast(color):
+        luminance = color[1] * 0.299 + color[2] * 0.587 + color[3] * 0.114
+        if luminance > 186:
+            return "#FF000000"
+        return "#FFFFFFFF"
+
+    @staticmethod
+    def _encoded(color):
+        values = map(lambda value: max(0, min(255, value)), color)
+        return "#" + "".join(f"{value:02X}" for value in values)
+
+
 class FormulaFunctions:
     """Small handlers for the Kode functions supported by the preview."""
 
@@ -288,6 +496,7 @@ class FormulaFunctions:
             "ci": self._calendar_information,
             "ai": self._astronomy_information,
             "br": self._browser_information,
+            "ce": self._color_editor,
         }
         handler = handlers.get(name, self._empty)
         return handler(arguments)
@@ -305,51 +514,63 @@ class FormulaFunctions:
         context = self._context
         global_values = context["globals"]
         date_values = global_values.optional("__df__", DEFAULT_DATE_FORMAT_VALUES)
-        return date_values.get(_formula_text(arguments.optional(0)), "02")
+        pattern = _formula_text(arguments.optional(0))
+        direct = date_values.get(pattern)
+        if direct is not None:
+            return direct
+        return self._formatted_date_pattern(pattern, date_values)
 
     @staticmethod
-    def _media_information(arguments):
+    def _formatted_date_pattern(pattern, values):
+        names = sorted(values, key=len, reverse=True)
+        output = pattern
+        for name in names:
+            output = output.replace(name, str(values[name]))
+        return output
+
+    def _media_information(self, arguments):
         values = {
             "title": "Song Title", "artist": "Artist Name", "state": "PLAYING",
             "percent": 40.0, "cover": "", "pos": 88000.0, "len": 218000.0,
         }
-        return values.get(arguments.key(), 0.0)
+        return PreviewFormulaValues(self._context).value(
+            "media", arguments, values, 0.0)
 
-    @staticmethod
-    def _weather_information(arguments):
+    def _weather_information(self, arguments):
         values = {
             "temp": 32.0, "flik": 32.0, "tempu": "C",
             "icon": "CLEAR", "cond": "Mostly Cloudy",
         }
-        return values.get(arguments.key(), 32.0)
+        return PreviewFormulaValues(self._context).value(
+            "weather", arguments, values, 32.0)
 
-    @staticmethod
-    def _weather_forecast(arguments):
+    def _weather_forecast(self, arguments):
         values = {"max": 29.0, "min": 26.0, "cond": "MOSTLY_CLOUDY"}
-        return values.get(arguments.key(), 27.0)
+        return PreviewFormulaValues(self._context).value(
+            "forecast", arguments, values, 27.0)
 
-    @staticmethod
-    def _battery_information(arguments):
+    def _battery_information(self, arguments):
         values = {"level": 95.0, "charging": 0.0, "fullempty": "future"}
-        return values.get(arguments.key(), 95.0)
+        return PreviewFormulaValues(self._context).value(
+            "battery", arguments, values, 95.0)
 
-    @staticmethod
-    def _location_information(arguments):
+    def _location_information(self, arguments):
         values = {"loc": "横浜市", "country": "日本", "postal": "231-0836"}
-        return values.get(arguments.key(), "横浜市")
+        return PreviewFormulaValues(self._context).value(
+            "location", arguments, values, "横浜市")
 
-    @staticmethod
-    def _network_connection(arguments):
+    def _network_connection(self, arguments):
         values = {
             "wifi": "CONNECTED", "ssid": "SSID-328F3B", "wsig": 9.0,
             "csig": 4.0, "dtype": "LTE", "cell": "ON",
         }
-        return values.get(arguments.key(), "")
+        return PreviewFormulaValues(self._context).value(
+            "network", arguments, values, "")
 
-    @staticmethod
-    def _resource_monitor(arguments):
+    def _resource_monitor(self, arguments):
         values = {"cused": 42.0, "fstot": 256.0, "fsfree": 59.0}
-        return values.get(arguments.key(), 42.0)
+        return PreviewFormulaValues(self._context).value(
+            "resource", arguments, values, 42.0)
 
     def _global_variable(self, arguments):
         context = self._context
@@ -382,11 +603,7 @@ class FormulaFunctions:
 
     @staticmethod
     def _mathematics_utility(arguments):
-        mode = arguments.key()
-        value = _as_number(arguments.optional(1, arguments.optional(0)))
-        operations = {"ceil": math.ceil, "floor": math.floor}
-        operation = operations.get(mode, round)
-        return operation(value)
+        return MathematicsUtilities.apply(arguments)
 
     @staticmethod
     def _time_format(arguments):
@@ -398,30 +615,27 @@ class FormulaFunctions:
 
     @staticmethod
     def _text_converter(arguments):
-        if arguments.key() != "split":
-            return ""
-        separator = _formula_text(arguments.optional(2, "#"))
-        parts = _formula_text(arguments.optional(1)).split(separator)
-        index = int(_as_number(arguments.optional(3, 0)))
-        if 0 <= index < len(parts):
-            return parts[index]
-        return ""
+        return TextConversions.apply(arguments)
 
     @staticmethod
-    def _calendar_information(arguments):
-        if arguments.key() == "title":
-            return "学校"
-        return ""
+    def _color_editor(arguments):
+        return ColorEditor.apply(arguments)
 
-    @staticmethod
-    def _astronomy_information(arguments):
-        if arguments.key() == "seasonc":
-            return "SPRING"
-        return ""
+    def _calendar_information(self, arguments):
+        values = {"title": "学校"}
+        return PreviewFormulaValues(self._context).value(
+            "calendar", arguments, values, "")
 
-    @staticmethod
-    def _browser_information(_arguments):
-        return "今日も、ちゃんと顔見せてくれて、ありがと。"
+    def _astronomy_information(self, arguments):
+        values = {"seasonc": "SPRING"}
+        return PreviewFormulaValues(self._context).value(
+            "astronomy", arguments, values, "")
+
+    def _browser_information(self, arguments):
+        key = _formula_text(arguments.optional(1)).lower()
+        values = {"gpt_ans": "Preview broadcast value"}
+        return PreviewFormulaValues(self._context).named(
+            "broadcast", key, values, "")
 
     @staticmethod
     def _empty(_arguments):
@@ -432,7 +646,7 @@ class FormulaParser:
     """Precedence-climbing parser backed by one context object."""
 
     PRECEDENCE = {
-        "|": 1, "&": 2, "=": 3, "!=": 3, "<": 3,
+        "|": 1, "&": 2, "=": 3, "!=": 3, "~=": 3, "<": 3,
         ">": 3, "<=": 3, ">=": 3, "+": 4, "-": 4, "*": 5, "/": 5,
     }
 
@@ -550,6 +764,7 @@ def eval_formula(text, global_values=None):
     """Evaluate one formula while preserving non-string result types."""
     if not isinstance(text, str):
         return text
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
     stripped = text.strip()
     if _is_single_formula(stripped):
         return FormulaParser(stripped[1:-1], global_values).parse()

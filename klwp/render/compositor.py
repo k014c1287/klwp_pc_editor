@@ -1,7 +1,10 @@
 """Compose individual KLWP modules and their child layers."""
 
 from ..shared import *  # noqa: F401,F403
+from .blend import BlendRendererMixin
+from .animation_effects import AnimationEffectMixin
 from .context import ItemPlacement, PaintRequest, StackCursor
+from .component import ComponentRendererMixin
 
 
 class CompositorLeafMixin:
@@ -19,9 +22,9 @@ class CompositorLeafMixin:
         self._prepare_request(request)
         if self._request_is_hidden(request):
             return
-        if self._paint_root_opacity(request):
-            return
         placement = self._item_placement(request)
+        if self._paint_root_effect(request, placement):
+            return
         self._remember_item_bounds(request, placement)
         self._register_events(request, placement)
         self._paint_shadow(request, placement)
@@ -51,33 +54,6 @@ class CompositorLeafMixin:
         if visible is False:
             return True
         return isinstance(visible, str) and visible.lower() == "false"
-
-    def _paint_root_opacity(self, request):
-        animation = request["root_animation"]
-        if not self._needs_root_opacity(request, animation):
-            return False
-        image = request["image"]
-        transparent = Image.new("RGBA", image.size, (0, 0, 0, 0))
-        self._paint_item(
-            transparent, request["item"], request["parent_box"],
-            request["global_values"], request["preplaced"],
-            _root_animation=animation, _opacity_pass=True)
-        self._apply_opacity(transparent, animation["alpha"])
-        image.alpha_composite(transparent)
-        return True
-
-    @staticmethod
-    def _needs_root_opacity(request, animation):
-        return (
-            request["is_root"] and animation["alpha"] < 0.999
-            and not request["opacity_pass"]
-        )
-
-    @staticmethod
-    def _apply_opacity(image, opacity):
-        alpha_channel = image.getchannel("A")
-        table = [int(value * opacity) for value in range(256)]
-        image.putalpha(alpha_channel.point(table))
 
     def _item_placement(self, request):
         scale = self.memory['_scale']
@@ -150,6 +126,11 @@ class CompositorLeafMixin:
             placement["scale"], request["global_values"])
 
     def _paint_leaf(self, request, placement):
+        if self._paint_blended_leaf(request, placement):
+            return
+        self._paint_plain_leaf(request, placement)
+
+    def _paint_plain_leaf(self, request, placement):
         item = request["item"]
         module_type = item.get("internal_type", "")
         angle = self._item_rotation(item, request["global_values"])
@@ -211,9 +192,12 @@ class CompositorLeafMixin:
             placement["pixel_horizontal"], placement["pixel_vertical"],
             placement["scale"], request["global_values"])
 
-class CompositorMixin(CompositorLeafMixin):
+class CompositorMixin(CompositorLeafMixin, ComponentRendererMixin,
+                      BlendRendererMixin, AnimationEffectMixin):
     def _paint_children(self, request, placement):
         item = request["item"]
+        if self._paint_component(request, placement):
+            return
         if self._paint_rotated_group(request, placement):
             return
         if item.get("internal_type") == "StackLayerModule":

@@ -47,6 +47,7 @@ class RootGlobalValues:
         result = dict(stored) if isinstance(stored, dict) else {}
         self._apply_switches(result)
         result["__df__"] = self._date_values()
+        result["__preview__"] = memory.optional("preview_values", {})
         return result
 
     def _apply_switches(self, result):
