@@ -294,7 +294,7 @@ class InteractionMixin(PreviewInteractionMixin, ResizeInteractionMixin):
             self.memory['drag_state']
         difference_horizontal = event.x / scale - initial_horizontal
         difference_vertical = event.y / scale - initial_vertical
-        anchor = self.memory['selected'].get("position_anchor", "TOPLEFT")
+        anchor = self.memory['selected'].get("position_anchor") or DEFAULT_ANCHOR
         horizontal_sign = self._horizontal_drag_sign(anchor)
         vertical_sign = self._vertical_drag_sign(anchor)
         selected = self.memory['selected']

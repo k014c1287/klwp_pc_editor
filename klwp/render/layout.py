@@ -156,7 +156,7 @@ class LayoutMixin:
 
     def _expand_layer_extent(self, extent, child, global_values):
         width, height = self._item_size(child, global_values)
-        anchor = str(child.get("position_anchor") or "CENTER")
+        anchor = str(child.get("position_anchor") or DEFAULT_ANCHOR)
         horizontal = self._padding_difference(child, "left", "right", global_values)
         vertical = self._padding_difference(child, "top", "bottom", global_values)
         required_width = self._required_horizontal(anchor, width, horizontal)

@@ -1,6 +1,7 @@
 """Calculate one module's anchored position inside a parent box."""
 
 from ..formula import _as_number
+from ..modules import DEFAULT_ANCHOR
 from .layout_context import ModulePadding
 
 
@@ -135,7 +136,7 @@ class PlacementCalculator:
         return offset
 
     def _anchor(self):
-        return self._request["item"].get("position_anchor") or "CENTER"
+        return self._request["item"].get("position_anchor") or DEFAULT_ANCHOR
 
     def _is_component(self):
         item = self._request["item"]

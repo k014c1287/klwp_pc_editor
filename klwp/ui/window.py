@@ -40,12 +40,11 @@ class EditorWindowBuilder:
             ("＋レイヤー", lambda: owner.cmd_add("layer")),
             ("｜", None),
             ("複製", owner.cmd_duplicate), ("削除", owner.cmd_delete),
-            ("↑", lambda: owner.cmd_move(-1)),
-            ("↓", lambda: owner.cmd_move(1)),
+            ("背面へ", lambda: owner.cmd_move(-1)),
+            ("前面へ", lambda: owner.cmd_move(1)),
             ("｜", None),
             ("背景設定", owner.cmd_background),
             ("画像管理", owner.cmd_images),
-            ("Switch管理", owner._edit_switches),
             ("端末解像度", owner.cmd_device_res),
         ]
 
@@ -76,11 +75,34 @@ class EditorWindowBuilder:
     def _module_tree(self, body):
         owner = self._owner
         frame = ttk.Frame(body)
-        tree = ttk.Treeview(frame, show="tree", selectmode="browse")
+        ttk.Label(
+            frame, text="要素（下ほど前面）  ドラッグで順序変更",
+            padding=(6, 5)).pack(fill="x")
+        tree = ttk.Treeview(
+            frame, columns=("kind", "priority"),
+            show="tree headings", selectmode="browse")
+        self._configure_module_tree(tree)
         tree.pack(fill="both", expand=True)
         tree.bind("<<TreeviewSelect>>", owner._on_tree_select)
+        tree.bind("<ButtonPress-1>", owner._on_tree_press, add="+")
+        tree.bind("<B1-Motion>", owner._on_tree_drag, add="+")
+        tree.bind("<ButtonRelease-1>", owner._on_tree_release, add="+")
         owner.memory['tree'] = tree
         body.add(frame, weight=1)
+
+    @staticmethod
+    def _configure_module_tree(tree):
+        tree.heading("#0", text="要素", anchor="w")
+        tree.heading("kind", text="種類", anchor="w")
+        tree.heading("priority", text="前面順", anchor="center")
+        tree.column("#0", width=190, minwidth=120, stretch=True)
+        tree.column("kind", width=92, minwidth=72, stretch=False)
+        tree.column("priority", width=62, minwidth=55, stretch=False)
+        tree.tag_configure("hidden", foreground="#808080")
+        tree.tag_configure(
+            "drop_before", background="#dbeafe", foreground="#1d4ed8")
+        tree.tag_configure(
+            "drop_after", background="#dcfce7", foreground="#166534")
 
     def _preview(self, body):
         frame = ttk.Frame(body)

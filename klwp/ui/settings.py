@@ -4,7 +4,6 @@ from ..shared import *  # noqa: F401,F403
 from .setting_forms import AnimationFormDialog, EventFormDialog
 from .setting_lists import ModuleSettingListDialog
 from .setting_values import SwitchReferenceCounter, switch_global_names
-from .switch_dialog import SwitchManagerDialog
 from .global_dialog import GlobalManagerDialog
 
 
@@ -57,12 +56,12 @@ class SettingsMixin:
         if item is not None:
             ModuleSettingListDialog(self, item, "event").show()
 
-    def _edit_switches(self):
-        SwitchManagerDialog(self).show()
-
     def _edit_globals(self):
-        selected = self.memory["selected"]
         scope = self.memory["archive"].root_module()
-        if isinstance(selected, dict) and "globals_list" in selected:
-            scope = selected
         GlobalManagerDialog(self, scope).show()
+
+    def _edit_local_globals(self):
+        selected = self.memory["selected"]
+        if not isinstance(selected, dict) or "globals_list" not in selected:
+            return
+        GlobalManagerDialog(self, selected).show()

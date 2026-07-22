@@ -151,8 +151,10 @@ class GlobalManagerDialog:
     def __init__(self, owner, scope):
         existing = scope.get("globals_list", {})
         working = copy.deepcopy(existing) if isinstance(existing, dict) else {}
+        root_module = owner.memory["archive"].root_module()
         self._context = {
             "owner": owner, "scope": scope, "working": working,
+            "root": scope is root_module,
         }
 
     def show(self):
@@ -165,7 +167,10 @@ class GlobalManagerDialog:
     def _window(self):
         owner = self._context["owner"]
         window = tk.Toplevel(owner)
-        window.title("グローバル変数管理")
+        title = "グローバル変数管理"
+        if not self._context["root"]:
+            title = "ローカルGlobal管理"
+        window.title(title)
         window.geometry("620x430")
         window.transient(owner)
         window.grab_set()

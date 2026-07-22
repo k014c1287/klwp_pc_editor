@@ -65,7 +65,7 @@ class ResizeInteractionMixin:
         actual_left, actual_top, _actual_width, _actual_height = actual
         difference_horizontal = target_left - actual_left
         difference_vertical = target_top - actual_top
-        anchor = item.get("position_anchor", "CENTER")
+        anchor = item.get("position_anchor") or DEFAULT_ANCHOR
         horizontal_sign = self._horizontal_drag_sign(anchor)
         vertical_sign = self._vertical_drag_sign(anchor)
         horizontal_offset = float(item.get("position_offset_x", 0) or 0)

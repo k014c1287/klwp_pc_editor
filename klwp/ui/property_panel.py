@@ -27,9 +27,9 @@ class AnchorChoices:
     def to_display(internal_value):
         pairs = map(AnchorChoices._reversed_pair, AnchorChoices.VALUES)
         labels = dict(pairs)
-        text = str(internal_value or "CENTER")
+        text = str(internal_value or DEFAULT_ANCHOR)
         normalized = text.upper()
-        return labels.get(normalized, "中央")
+        return labels.get(normalized, "上")
 
     @staticmethod
     def _reversed_pair(choice):
@@ -39,7 +39,7 @@ class AnchorChoices:
     @staticmethod
     def to_internal(display_value):
         values = dict(AnchorChoices.VALUES)
-        return values.get(display_value, "CENTER")
+        return values.get(display_value, DEFAULT_ANCHOR)
 
 
 class PropertyPanelBuilder:
@@ -128,7 +128,7 @@ class PropertyPanelBuilder:
         owner = self._owner
         item = self._item
         memory = owner.memory
-        internal_value = item.get(key, "CENTER")
+        internal_value = item.get(key) or DEFAULT_ANCHOR
         display_value = AnchorChoices.to_display(internal_value)
         variable = tk.StringVar(value=display_value)
         choices = AnchorChoices.display_values()
@@ -232,7 +232,11 @@ class PropertyPanelBuilder:
         ).pack(anchor="w", pady=(0, 4))
         self._interaction_button(frame, "アニメーション設定", owner._edit_animations)
         self._interaction_button(frame, "タップイベント設定", owner._edit_tap_events)
-        self._interaction_button(frame, "Switchグローバル管理", owner._edit_switches)
+        self._interaction_button(frame, "グローバル変数管理", owner._edit_globals)
+        if "globals_list" in item:
+            self._interaction_button(
+                frame, "この要素のローカルGlobal管理",
+                owner._edit_local_globals)
 
     @staticmethod
     def _interaction_button(frame, label, command):

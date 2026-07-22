@@ -2,7 +2,7 @@
 
 この文書は、現在の `klwp_editor.py` と `klwp/` パッケージを基準にした設計資料です。図はすべて Mermaid 形式で記述しています。
 
-- 対象実装: 2026-07-21 時点
+- 対象実装: 2026-07-22 時点
 - 実行入口: `klwp_editor.py`
 - 合成ルート: `klwp/editor.py` の `EditorApp`
 - 永続化対象: ZIP 形式の `.klwp` ファイル
@@ -96,6 +96,11 @@ classDiagram
     class PropertyPanelMixin
     class PreviewValuesMixin
     class AdbTransferMixin
+    class TreeDragMixin {
+        -_on_tree_press(event)
+        -_on_tree_drag(event)
+        -_on_tree_release(event)
+    }
     class ApplicationMemory {
         -_values
         +optional(name, default)
@@ -122,6 +127,7 @@ classDiagram
     PropertyPanelMixin <|-- EditorApp
     PreviewValuesMixin <|-- EditorApp
     AdbTransferMixin <|-- EditorApp
+    TreeDragMixin <|-- EditorApp
 
     CompositorLeafMixin <|-- CompositorMixin
     ShapeGeometryMixin <|-- ShapeRendererMixin
@@ -239,7 +245,7 @@ classDiagram
 
 ### 2.3 描画パイプライン
 
-`CanvasRendererMixin` が描画全体を開始し、`CompositorMixin` がモジュールツリーを再帰的に合成します。値解決、アニメーション、配置計算を行った後、モジュール種別ごとのレンダラーへ振り分けます。
+`CanvasRendererMixin` が描画全体を開始し、`CompositorMixin` がモジュールツリーを再帰的に合成します。値解決、アニメーション、配置計算を行った後、モジュール種別ごとのレンダラーへ振り分けます。ルート配置のYオフセットはTOP系で増加が下方向、CENTER/BOTTOM系で増加が上方向です。アンカー未指定時は配置・ドラッグともにKLWP既定のCENTERとして扱います。
 
 ```mermaid
 classDiagram
@@ -481,6 +487,16 @@ classDiagram
     class ModuleTreeBuilder {
         +build()
     }
+    class ModuleTreePresentation {
+        +title(item)
+        +kind(item)
+        +priority(index, count)
+        +tags(item)
+    }
+    class TreeDragMixin
+    class TreeReorder {
+        +move(siblings, source, target, after)
+    }
     class PropertyPanelBuilder {
         +build()
     }
@@ -511,9 +527,6 @@ classDiagram
         +show()
     }
     class ImageManagerDialog {
-        +show()
-    }
-    class SwitchManagerDialog {
         +show()
     }
     class GlobalManagerDialog {
@@ -547,6 +560,9 @@ classDiagram
 
     EditorApp ..> EditorWindowBuilder : startup
     EditorApp ..> ModuleTreeBuilder : refresh tree
+    ModuleTreeBuilder ..> ModuleTreePresentation : row values
+    EditorApp ..> TreeDragMixin : layer ordering
+    TreeDragMixin ..> TreeReorder : commit drop
     EditorApp ..> PropertyPanelBuilder : selected item
     PropertyPanelBuilder ..> AnchorChoices : anchor combobox conversion
     PropertyPanelBuilder ..> ColorControl : visual color editing
@@ -556,7 +572,6 @@ classDiagram
     EditorApp ..> ShapeDialog : add shape
     EditorApp ..> BackgroundDialog : background
     EditorApp ..> ImageManagerDialog : bitmap assets
-    EditorApp ..> SwitchManagerDialog : globals switch
     EditorApp ..> GlobalManagerDialog : all globals
     GlobalManagerDialog ..> GlobalEntryDialog : add or edit
     EditorApp ..> PreviewValuesDialog : formula preview inputs
@@ -565,7 +580,7 @@ classDiagram
     EditorApp ..> ModuleSettingListDialog : item settings
     ModuleSettingListDialog ..> AnimationFormDialog
     ModuleSettingListDialog ..> EventFormDialog
-    SwitchManagerDialog ..> SwitchReferenceCounter
+    GlobalManagerDialog ..> SwitchReferenceCounter : deletion guard
 ```
 
 ## 3. シーケンス図
@@ -894,6 +909,39 @@ sequenceDiagram
     Editor-->>User: 転送結果を表示
 ```
 
+### 3.9 要素ツリーのドラッグによる表示優先度変更
+
+ツリーはKLWPの配列順と同じく上から背面、下ほど前面として表示します。ドラッグ元とドロップ先が同じ兄弟コレクションに属する場合だけ、対象行の前または後へ移動します。別レイヤーへのドロップは階層構造を変えてしまうため受け付けません。変更はドロップ時に一度だけ履歴へ記録され、Undo/Redoできます。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Tree as Treeview
+    participant Drag as TreeDragMixin
+    participant Reorder as TreeReorder
+    participant Items as viewgroup_items
+    participant History as HistoryTimeline
+    participant Preview as CanvasRendererMixin
+
+    User->>Tree: 要素行を押してドラッグ
+    Tree->>Drag: _on_tree_press / _on_tree_drag
+    Drag->>Drag: 同じ兄弟コレクションか検証
+    alt 有効なドロップ先
+        Drag->>Tree: 前／後の候補行を色表示
+        Drag-->>User: 前面側／背面側をステータス表示
+    else 別レイヤーまたは空白
+        Drag-->>User: 同一レイヤー内へのドロップを案内
+    end
+    User->>Tree: ドロップ
+    Tree->>Drag: _on_tree_release
+    Drag->>Reorder: move(siblings, source, target, after)
+    Reorder->>Items: removeして対象位置へinsert
+    Drag->>History: record(snapshot)
+    Drag->>Preview: _refresh_all(select=source)
+    Preview-->>User: 新しい重なり順を描画
+```
+
 ## 4. 状態とデータの境界
 
 ### 4.1 `ApplicationMemory` の主な内容
@@ -904,7 +952,7 @@ sequenceDiagram
 | 履歴 | `history`, `dirty` | 保存しない |
 | UI | `tree`, `canvas`, `status`, 各ボタン | 保存しない |
 | キャッシュ | `photo_cache`, `font_cache`, `_photo`, `_item_bounds` | 保存しない |
-| 編集操作 | `drag_state`, `resize_state` | 保存しない |
+| 編集操作 | `drag_state`, `resize_state`, `tree_drag` | 保存しない |
 | プレビュー | `preview_scroll`, `preview_switches`, `preview_switch_progress`, `preview_values`, `preview_ts` | 保存しない |
 | アニメーション | `_switch_transitions`, `_scroll_transition`, `_loop_started_at` | 保存しない |
 | イベント | `_event_regions`, `interaction_drag` | 保存しない |
@@ -938,5 +986,6 @@ sequenceDiagram
 - 描画順、値解決順、子要素の合成方法を変更した場合は「2.3」と「3.2」を更新する。
 - 新しいアニメーション反応・アクションを追加した場合は「2.4」「3.5」「3.6」を更新する。
 - リサイズ対象・ハンドル・比率制約を変更した場合は「2.1」と「3.7」を更新する。
+- 要素ツリーの順序・ドロップ制約を変更した場合は「2.5」と「3.9」を更新する。
 - `ApplicationMemory` の状態分類を増やした場合は「4.1」を更新する。
 - Mermaid 図のクラス名とメソッド名は、コード上の識別子と一致させる。
