@@ -27,6 +27,7 @@ class BootstrapMixin:
         memory['preview_ts'] = information["ts"]
         memory['selected'] = None
         memory['tree_map'] = {}
+        memory['tree_drag'] = None
         memory['photo_cache'] = {}
         memory['font_cache'] = {}
         memory['device_res'] = (1080, 2400)

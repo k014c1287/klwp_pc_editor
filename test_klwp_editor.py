@@ -14,6 +14,8 @@ from klwp.resize import ResizeHandleSet, ResizeSession
 from klwp.ui.global_dialog import GlobalEntryValues
 from klwp.ui.setting_values import TouchActionValues
 from klwp.adb import AdbDevices, AdbTransfer
+from klwp.ui.tree import ModuleTreePresentation
+from klwp.ui.tree_drag import TreeReorder
 
 
 ROOT = Path(__file__).resolve().parent
@@ -103,6 +105,8 @@ class PropertyPanelTests(unittest.TestCase):
         self.assertEqual(
             tuple(map(AnchorChoices.to_display, expected_values)),
             expected_labels)
+        self.assertEqual(AnchorChoices.to_display(None), "上")
+        self.assertEqual(AnchorChoices.to_internal(""), "TOP")
 
     def test_visual_color_value_preserves_rgb_and_opacity(self):
         color = KlwpColor("#80aabbcc")
@@ -131,6 +135,12 @@ class PropertyPanelTests(unittest.TestCase):
         self.assertEqual((number["min"], number["max"]), (0, 720))
         self.assertEqual(color["value"], "#80AABBCC")
 
+    def test_global_editor_creates_switch_values(self):
+        switch = GlobalEntryValues.create("toggle", "SWITCH", "on", 1)
+
+        self.assertEqual(switch["type"], "SWITCH")
+        self.assertEqual(switch["value"], 1)
+
     def test_external_touch_actions_use_klwp_event_keys(self):
         launched = TouchActionValues.update(
             {"unknown": 7}, "LAUNCH_APP", intent="intent:#Intent;end")
@@ -144,6 +154,31 @@ class PropertyPanelTests(unittest.TestCase):
         self.assertEqual(music["music_action"], "NEXT")
         self.assertNotIn("intent", music)
         self.assertNotIn("switch", music)
+
+
+class ModuleTreeTests(unittest.TestCase):
+    def test_drag_reorder_moves_items_before_and_after_targets(self):
+        back = {"internal_title": "back"}
+        middle = {"internal_title": "middle"}
+        front = {"internal_title": "front"}
+        siblings = [back, middle, front]
+
+        self.assertTrue(TreeReorder.move(siblings, back, front, True))
+        self.assertEqual(siblings, [middle, front, back])
+        self.assertTrue(TreeReorder.move(siblings, back, middle, False))
+        self.assertEqual(siblings, [back, middle, front])
+        self.assertFalse(TreeReorder.move(siblings, middle, middle, True))
+
+    def test_tree_presentation_explains_frontmost_priority(self):
+        hidden = {
+            "internal_type": "ShapeModule", "internal_title": "panel",
+            "config_visible": False,
+        }
+
+        self.assertEqual(ModuleTreePresentation.title(hidden), "panel")
+        self.assertEqual(ModuleTreePresentation.kind(hidden), "図形")
+        self.assertEqual(ModuleTreePresentation.priority(2, 3), "1・最前面")
+        self.assertEqual(ModuleTreePresentation.tags(hidden), ("hidden",))
 
 
 class ResizeTests(unittest.TestCase):
@@ -427,6 +462,34 @@ class RenderTests(unittest.TestCase):
             [renderer._animation_transform(item)["alpha"]
              for item in page_groups],
             [0.5, 0.5, 0.0])
+
+    def test_missing_anchor_uses_top_and_drag_tracks_pointer(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        selected = ke.make_module("shape")
+        selected.pop("position_anchor", None)
+        selected["position_offset_x"] = 100.0
+        selected["position_offset_y"] = 900.0
+        archive.modules().append(selected)
+        renderer = self.renderer(archive)
+        renderer.render_to_image(360, 800)
+        renderer.memory["selected"] = selected
+        self.assertNotIn("position_anchor", selected)
+
+        initial_top = renderer._bounds(selected)[1]
+        self.assertAlmostEqual(initial_top, 900.0)
+        scale = renderer.memory["_scale"]
+        renderer.memory["drag_state"] = (
+            100.0, 1000.0, selected["position_offset_x"],
+            selected["position_offset_y"])
+        renderer._render = lambda: None
+        event = type("Event", (), {
+            "x": 100.0 * scale, "y": 950.0 * scale,
+        })()
+        renderer._drag_selected_item(event)
+
+        self.assertEqual(selected["position_offset_y"], 850.0)
+        self.assertAlmostEqual(renderer._bounds(selected)[1], initial_top - 50.0)
 
     def test_scroll_and_switch_move_in_sample_directions(self):
         archive = ke.KlwpArchive()
