@@ -245,7 +245,7 @@ classDiagram
 
 ### 2.3 描画パイプライン
 
-`CanvasRendererMixin` が描画全体を開始し、`CompositorMixin` がモジュールツリーを再帰的に合成します。値解決、アニメーション、配置計算を行った後、モジュール種別ごとのレンダラーへ振り分けます。ルート配置のYオフセットはTOP系で増加が下方向、CENTER/BOTTOM系で増加が上方向です。アンカー未指定時は配置・ドラッグともにKLWP既定のCENTERとして扱います。
+`CanvasRendererMixin` が描画全体を開始し、`CompositorMixin` がモジュールツリーを再帰的に合成します。値解決、アニメーション、配置計算を行った後、モジュール種別ごとのレンダラーへ振り分けます。ルート配置のYオフセットはTOP系で増加が下方向、CENTER/BOTTOM系で増加が上方向です。アンカー未指定時は配置・ドラッグ・リサイズともにTOP（上）として扱います。
 
 ```mermaid
 classDiagram
