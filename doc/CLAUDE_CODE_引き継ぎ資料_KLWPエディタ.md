@@ -150,7 +150,7 @@ preset_thumb_portrait.jpg / preset_thumb_landscape.jpg … サムネイル
 
 ### 配置ルール
 
-1. **デフォルトアンカーは CENTER** (ルート・レイヤー内共通)
+1. **アンカー未指定時のデフォルトは TOP（上）** (ルート・レイヤー内共通)
 2. **padding は全アンカーで位置シフト**: `x += pad_left - pad_right`、
    `y += pad_top - pad_bottom` (「アンカー側の padding だけ有効」ではない)
 3. **offset_x/y はルート直下の要素にのみ適用**。レイヤー内の子要素では
@@ -169,10 +169,8 @@ preset_thumb_portrait.jpg / preset_thumb_landscape.jpg … サムネイル
    ため offset が意味を持たない)」という、要素種別に依存する可能性が高い**。
    実機での再確認が必要 (このドキュメント作成環境には実機がないため未検証)
 4. ルートのTOP系はYオフセットの増加が下方向、CENTER/BOTTOM系は
-   増加が上方向。アンカーキー未指定時のKLWP既定値はCENTER。
-   2026-07-22にドラッグ側だけ未指定をTOPLEFT扱いしていた不一致を修正。
-   透明で重なる `APIコール用タッチ判定` を選択中は、プレビュー押下時に
-   別の前面要素へ選択を切り替えず、その要素を優先してドラッグする
+   増加が上方向。アンカーキー未指定時はTOP（上）として扱う。
+   配置・ドラッグ・リサイズ・プロパティUIで同じデフォルトを使用する
 5. StackLayer の子は anchor/offset ではなく**順番に整列**
    (`config_margin` 間隔、HORIZONTAL_* なら横、それ以外は縦)
 6. OverlapLayer 自体のサイズは明示されない → 現実装は
