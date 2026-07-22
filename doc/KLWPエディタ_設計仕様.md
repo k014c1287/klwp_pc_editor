@@ -2,7 +2,7 @@
 
 この文書は、現在の `klwp_editor.py` と `klwp/` パッケージを基準にした設計資料です。図はすべて Mermaid 形式で記述しています。
 
-- 対象実装: 2026-07-20 時点
+- 対象実装: 2026-07-21 時点
 - 実行入口: `klwp_editor.py`
 - 合成ルート: `klwp/editor.py` の `EditorApp`
 - 永続化対象: ZIP 形式の `.klwp` ファイル
@@ -23,6 +23,7 @@
 | KLWP形式 | ZIP、`preset.json`、画像、フォント | `klwp/archive.py` |
 | 値と状態 | 値オブジェクト、履歴、コレクション | `klwp/values.py` ほか |
 | Kode/SVG | 数式評価、SVG Path の解析とマスク化 | `klwp/formula.py`, `klwp/svg.py` |
+| Android転送 | adb検出、端末選択、保存済み成果物のpush | `klwp/adb.py`, `klwp/ui/adb_transfer.py` |
 
 ## 2. クラス図
 
@@ -72,6 +73,10 @@ classDiagram
     class CompositorMixin
     class ShapeGeometryMixin
     class ShapeMaskMixin
+    class GradientRendererMixin
+    class ComponentRendererMixin
+    class BlendRendererMixin
+    class AnimationEffectMixin
     class ShapeRendererMixin
     class ContentRendererMixin
     class TextRendererMixin
@@ -89,6 +94,8 @@ classDiagram
     }
     class SettingsMixin
     class PropertyPanelMixin
+    class PreviewValuesMixin
+    class AdbTransferMixin
     class ApplicationMemory {
         -_values
         +optional(name, default)
@@ -113,6 +120,8 @@ classDiagram
     InteractionMixin <|-- EditorApp
     SettingsMixin <|-- EditorApp
     PropertyPanelMixin <|-- EditorApp
+    PreviewValuesMixin <|-- EditorApp
+    AdbTransferMixin <|-- EditorApp
 
     CompositorLeafMixin <|-- CompositorMixin
     ShapeGeometryMixin <|-- ShapeRendererMixin
@@ -314,6 +323,9 @@ classDiagram
 
     CanvasRendererMixin ..> CompositorLeafMixin : starts recursive paint
     CompositorLeafMixin <|-- CompositorMixin
+    ComponentRendererMixin <|-- CompositorMixin
+    BlendRendererMixin <|-- CompositorMixin
+    AnimationEffectMixin <|-- CompositorMixin
     CompositorLeafMixin ..> PaintRequest
     CompositorLeafMixin ..> ItemPlacement
     CompositorMixin ..> StackCursor
@@ -328,6 +340,7 @@ classDiagram
     CompositorLeafMixin ..> ContentRendererMixin : bitmap icon progress
     ShapeGeometryMixin <|-- ShapeRendererMixin
     ShapeMaskMixin <|-- ShapeRendererMixin
+    GradientRendererMixin <|-- ShapeRendererMixin
     TextRendererMixin ..> TextLayoutResult
     ShapeMaskMixin ..> SvgPathParser : Path shape
     ContentRendererMixin ..> SvgPathParser : icon path
@@ -383,7 +396,13 @@ classDiagram
         +add_horizontal(distance)
         +add_vertical(distance)
         +multiply_alpha(value)
+        +add_rotation(angle)
+        +multiply_scale(scale)
+        +apply_filter(name, amount)
         +result()
+    }
+    class AnimationEasing {
+        +apply(progress)
     }
     class LoopProgress {
         -_started_at
@@ -418,6 +437,10 @@ classDiagram
     class BinaryOperations {
         +apply(operator, left, right)
     }
+    class PreviewFormulaValues
+    class MathematicsUtilities
+    class TextConversions
+    class ColorEditor
 
     PreviewModelMixin ..> PreviewStateResetter
     PreviewModelMixin ..> PreviewPageCounter
@@ -428,6 +451,7 @@ classDiagram
     RootGlobalValues ..> PreviewDateValues
     AnimationTransform *-- TransformState
     AnimationTransform ..> LoopProgress
+    AnimationTransform ..> AnimationEasing
     ModuleValueResolver ..> FormulaParser : eval_formula
     FormulaParser *-- FormulaContext
     FormulaContext *-- FormulaTokenStream
@@ -436,6 +460,10 @@ classDiagram
     FormulaParser ..> FormulaArguments
     FormulaParser ..> FormulaFunctions
     FormulaParser ..> BinaryOperations
+    FormulaFunctions ..> PreviewFormulaValues
+    FormulaFunctions ..> MathematicsUtilities
+    FormulaFunctions ..> TextConversions
+    FormulaFunctions ..> ColorEditor
 ```
 
 ### 2.5 UIの協調クラス
@@ -488,6 +516,22 @@ classDiagram
     class SwitchManagerDialog {
         +show()
     }
+    class GlobalManagerDialog {
+        +show()
+    }
+    class GlobalEntryDialog {
+        +show()
+    }
+    class PreviewValuesDialog {
+        +show()
+    }
+    class AdbTransfer {
+        +send()
+        +destination()
+    }
+    class AdbLocator {
+        +find()
+    }
     class ModuleSettingListDialog {
         +show()
     }
@@ -513,6 +557,11 @@ classDiagram
     EditorApp ..> BackgroundDialog : background
     EditorApp ..> ImageManagerDialog : bitmap assets
     EditorApp ..> SwitchManagerDialog : globals switch
+    EditorApp ..> GlobalManagerDialog : all globals
+    GlobalManagerDialog ..> GlobalEntryDialog : add or edit
+    EditorApp ..> PreviewValuesDialog : formula preview inputs
+    EditorApp ..> AdbTransfer : push preset
+    AdbTransfer ..> AdbLocator : locate executable
     EditorApp ..> ModuleSettingListDialog : item settings
     ModuleSettingListDialog ..> AnimationFormDialog
     ModuleSettingListDialog ..> EventFormDialog
@@ -604,7 +653,7 @@ sequenceDiagram
         Composite->>Values: resolve(item, property, default)
         Values-->>Composite: 数式・Global・直接値の優先順で返す
         Composite->>Animation: calculate()
-        Animation-->>Composite: dx・dy・alpha
+        Animation-->>Composite: dx・dy・alpha・rotation・scale・filter
         Composite->>Placement: calculate()
         Placement-->>Composite: 描画位置と寸法
         Composite->>Renderer: 図形・文字・画像・アイコン・進捗を描画
@@ -722,7 +771,7 @@ sequenceDiagram
             Events->>Canvas: _render()
             Canvas->>Transform: calculate()
             Transform->>Memory: switch_progressを参照
-            Transform-->>Canvas: dx・dy・alpha
+            Transform-->>Canvas: dx・dy・alpha・rotation・scale・filter
             Canvas-->>User: アニメーションフレーム
             Events->>Timer: 次の16msを予約
         end
@@ -812,6 +861,39 @@ sequenceDiagram
     Interaction->>History: record(snapshot)
 ```
 
+### 3.8 ADBによるAndroid端末への転送
+
+転送コマンドは編集中のプリセットを先に保存し、PATHまたはAndroid SDKから`adb`を検出します。接続状態が`device`の端末が1台だけであることを確認してから、KLWPのwallpapersディレクトリを作成し、保存済み`.klwp`を転送します。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Editor as AdbTransferMixin
+    participant Document as DocumentMixin
+    participant Locator as AdbLocator
+    participant Transfer as AdbTransfer
+    participant Adb as adb
+    participant Android as Android端末
+
+    User->>Editor: Androidへ転送
+    Editor->>Document: cmd_save()
+    Document-->>Editor: 保存済みファイルパス
+    Editor->>Locator: find()
+    Locator-->>Editor: adb実行ファイル
+    Editor->>Transfer: AdbTransfer(adb, path)
+    Editor->>Transfer: send()
+    Transfer->>Adb: devices
+    Adb-->>Transfer: 接続端末一覧
+    Transfer->>Transfer: require_one(output)
+    Transfer->>Adb: shell mkdir -p /sdcard/Kustom/wallpapers
+    Adb->>Android: 転送先を準備
+    Transfer->>Adb: push source destination
+    Adb->>Android: .klwpを書き込み
+    Transfer-->>Editor: device, destination
+    Editor-->>User: 転送結果を表示
+```
+
 ## 4. 状態とデータの境界
 
 ### 4.1 `ApplicationMemory` の主な内容
@@ -823,7 +905,7 @@ sequenceDiagram
 | UI | `tree`, `canvas`, `status`, 各ボタン | 保存しない |
 | キャッシュ | `photo_cache`, `font_cache`, `_photo`, `_item_bounds` | 保存しない |
 | 編集操作 | `drag_state`, `resize_state` | 保存しない |
-| プレビュー | `preview_scroll`, `preview_switches`, `preview_switch_progress` | 保存しない |
+| プレビュー | `preview_scroll`, `preview_switches`, `preview_switch_progress`, `preview_values`, `preview_ts` | 保存しない |
 | アニメーション | `_switch_transitions`, `_scroll_transition`, `_loop_started_at` | 保存しない |
 | イベント | `_event_regions`, `interaction_drag` | 保存しない |
 
@@ -844,6 +926,7 @@ sequenceDiagram
 | `TextModule` | `TextRendererMixin` |
 | `FontIconModule` | `ContentRendererMixin._paint_icon()` |
 | `BitmapModule` | `ContentRendererMixin._paint_bitmap()` |
+| `KomponentModule` | `ComponentRendererMixin`（`config_scale_value` を適用して再帰合成） |
 | `ProgressModule` | `ContentRendererMixin._paint_progress()` |
 | `StackLayerModule` | `CompositorMixin._paint_stack()` |
 | `OverlapLayerModule` など子要素を持つもの | `CompositorMixin._paint_overlap()` |

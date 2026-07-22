@@ -78,6 +78,7 @@ class LayoutMixin:
             "ProgressModule": self._progress_size,
             "TextModule": self._text_size,
             "StackLayerModule": self._stack_size,
+            "KomponentModule": self._component_size,
         }
         handler = handlers.get(item.get("internal_type", ""))
         if handler is not None:

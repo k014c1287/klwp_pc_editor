@@ -1,13 +1,15 @@
 """Modal forms for one animation or one tap event."""
 
 from ..shared import *  # noqa: F401,F403
-from .setting_values import first_or_empty
+from .setting_values import TouchActionValues, first_or_empty
 
 
 class AnimationFormDialog:
     INVALID = object()
     KNOWN_ACTIONS = {
         "SCROLL", "SCROLL_INVERTED", "FADE", "FADE_IN", "FADE_OUT",
+        "ROTATE", "ROTATE_INVERTED", "SCALE", "SCALE_INVERTED",
+        "COLOR_INVERT", "COLOR_SEPIA", "COLOR_BRIGHTEN", "COLOR_SATURATE",
     }
 
     def __init__(self, owner, parent, initial=None):
@@ -101,7 +103,9 @@ class AnimationFormDialog:
             "trigger": tuple(self._context["switch_names"]),
             "center": centers,
             "rule": ("CENTER", "BEFORE_CENTER", "AFTER_CENTER"),
-            "ease": ("NORMAL", "STRAIGHT", "OVERSHOOT", "BOUNCE"),
+            "ease": (
+                "NORMAL", "STRAIGHT", "ACCELERATE", "DECELERATE",
+                "OVERSHOOT", "BOUNCE"),
         }
 
     @staticmethod
@@ -204,7 +208,7 @@ class AnimationFormDialog:
         return True
 
     def _apply_numeric_values(self, data, action):
-        names = ("speed", "amount")
+        names = ("amount",)
         if action in ("SCROLL", "SCROLL_INVERTED"):
             names = ("speed", "angle", "limit")
         values = [self._number(name) for name in names]
@@ -248,7 +252,7 @@ class EventFormDialog:
         parent = self._context["parent"]
         window = tk.Toplevel(parent)
         window.title("タップイベント設定")
-        window.geometry("420x210")
+        window.geometry("540x340")
         window.transient(parent)
         window.grab_set()
         frame = ttk.Frame(window, padding=12)
@@ -260,22 +264,37 @@ class EventFormDialog:
         original = self._context["original"]
         existing_action = str(original.get("action", "SWITCH_GLOBAL"))
         actions = AnimationFormDialog._with_existing(
-            ["SWITCH_GLOBAL", "NONE"], existing_action)
+            ["SWITCH_GLOBAL", "LAUNCH_APP", "LAUNCH_SHORTCUT", "OPEN_LINK",
+             "MUSIC", "KUSTOM_ACTION", "NONE"], existing_action)
         switches = self._context["owner"]._switch_global_names()
-        action_variable = tk.StringVar(value=existing_action)
-        switch_variable = tk.StringVar(value=str(
-            original.get("switch", first_or_empty(switches))))
-        self._context["action_variable"] = action_variable
-        self._context["switch_variable"] = switch_variable
+        variables = {
+            "action": tk.StringVar(value=existing_action),
+            "switch": tk.StringVar(value=str(
+                original.get("switch", first_or_empty(switches)))),
+            "intent": tk.StringVar(value=str(
+                original.get("intent", original.get("kustom_action", "")))),
+            "music": tk.StringVar(value=str(original.get("music_action", ""))),
+        }
+        self._context["variables"] = variables
         frame = self._context["frame"]
-        self._combobox(frame, 0, "動作", action_variable, actions)
-        self._combobox(frame, 1, "Switch", switch_variable, switches)
+        self._combobox(frame, 0, "動作", variables["action"], actions)
+        self._combobox(frame, 1, "Switch", variables["switch"], switches)
+        self._entry(frame, 2, "Intent / URI / Kustom動作", variables["intent"])
+        music_actions = ("", "PLAY_PAUSE", "PLAY", "PAUSE", "NEXT", "PREVIOUS", "STOP")
+        self._combobox(frame, 3, "音楽操作", variables["music"], music_actions)
         ttk.Label(
             frame, foreground="#666", wraplength=370,
-            text="LAUNCH_APP・MUSIC等の既存設定は保持できますが、"
-                 "PCから新しいアプリ紐づけは作成しません。").grid(
-                     row=2, column=0, columnspan=2, sticky="w", pady=8)
+            text="アプリ・ショートカットはKLWP互換の intent:#Intent;...;end を、"
+                 "リンクはURIを入力します。PCプレビューでは外部実行しません。").grid(
+                     row=4, column=0, columnspan=2, sticky="w", pady=8)
         frame.columnconfigure(1, weight=1)
+
+    @staticmethod
+    def _entry(frame, row, label, variable):
+        ttk.Label(frame, text=label).grid(
+            row=row, column=0, sticky="w", pady=5)
+        ttk.Entry(frame, textvariable=variable).grid(
+            row=row, column=1, sticky="ew", pady=5)
 
     @staticmethod
     def _combobox(frame, row, label, variable, values):
@@ -288,7 +307,7 @@ class EventFormDialog:
 
     def _buttons(self):
         buttons = ttk.Frame(self._context["frame"])
-        buttons.grid(row=3, column=0, columnspan=2, sticky="e")
+        buttons.grid(row=5, column=0, columnspan=2, sticky="e")
         window = self._context["window"]
         ttk.Button(buttons, text="キャンセル", command=window.destroy).pack(
             side="left", padx=4)
@@ -296,25 +315,16 @@ class EventFormDialog:
             side="left", padx=4)
 
     def _save(self):
-        action = self._context["action_variable"].get()
-        switch = self._context["switch_variable"].get()
+        variables = self._context["variables"]
+        action = variables["action"].get()
+        switch = variables["switch"].get()
         if action == "SWITCH_GLOBAL" and not switch:
             messagebox.showerror(
                 APP_TITLE, "先にSwitchを作成して選択してください。",
                 parent=self._context["window"])
             return
-        event = copy.deepcopy(self._context["original"])
-        event["type"] = "SINGLE_TAP"
-        event["action"] = action
-        self._apply_action(event, action, switch)
+        event = TouchActionValues.update(
+            self._context["original"], action, switch,
+            variables["intent"].get(), variables["music"].get())
         self._context["result"] = event
         self._context["window"].destroy()
-
-    @staticmethod
-    def _apply_action(event, action, switch):
-        if action == "SWITCH_GLOBAL":
-            event["switch"] = switch
-            event.pop("intent", None)
-            event.pop("music_action", None)
-            return
-        event.pop("switch", None)

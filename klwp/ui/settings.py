@@ -5,6 +5,7 @@ from .setting_forms import AnimationFormDialog, EventFormDialog
 from .setting_lists import ModuleSettingListDialog
 from .setting_values import SwitchReferenceCounter, switch_global_names
 from .switch_dialog import SwitchManagerDialog
+from .global_dialog import GlobalManagerDialog
 
 
 class SettingsMixin:
@@ -58,3 +59,10 @@ class SettingsMixin:
 
     def _edit_switches(self):
         SwitchManagerDialog(self).show()
+
+    def _edit_globals(self):
+        selected = self.memory["selected"]
+        scope = self.memory["archive"].root_module()
+        if isinstance(selected, dict) and "globals_list" in selected:
+            scope = selected
+        GlobalManagerDialog(self, scope).show()

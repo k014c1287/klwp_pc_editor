@@ -25,6 +25,9 @@ class EditorWindowBuilder:
     def _toolbar_commands(self):
         owner = self._owner
         return [
+            ("Androidへ転送", owner.cmd_adb_transfer),
+            ("グローバル管理", owner._edit_globals),
+            ("プレビュー値", owner._edit_preview_values),
             ("新規", owner.cmd_new), ("開く", owner.cmd_open),
             ("保存", owner.cmd_save), ("名前を付けて保存", owner.cmd_save_as),
             ("｜", None),

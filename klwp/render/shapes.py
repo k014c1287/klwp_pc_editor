@@ -1,6 +1,7 @@
 """Render KLWP shape geometry, masks, paths and shadows."""
 
 from ..shared import *  # noqa: F401,F403
+from .gradient import GradientRendererMixin
 
 
 class ShapeGeometryMixin:
@@ -323,7 +324,8 @@ class ShapeMaskMixin:
         height = max(vertical_values) - vertical or 1
         return horizontal, vertical, width, height
 
-class ShapeRendererMixin(ShapeGeometryMixin, ShapeMaskMixin):
+class ShapeRendererMixin(ShapeGeometryMixin, ShapeMaskMixin,
+                         GradientRendererMixin):
     def _paint_shape(self, image, _drawing, item, horizontal, vertical,
                      width, height, scale, globals_=None):
         color = self._rgba(self._value(
@@ -339,19 +341,41 @@ class ShapeRendererMixin(ShapeGeometryMixin, ShapeMaskMixin):
             return
         mask = self._shape_geometry_mask(
             item, width, height, scale, globals_)
+        self._paint_shape_fill(
+            image, item, horizontal, vertical, width, height,
+            scale, color, mask, mask_type, globals_)
+
+    def _paint_shape_fill(self, image, item, horizontal, vertical,
+                          width, height, scale, color, mask, mask_type,
+                          global_values):
         if mask_type == "BLURRED":
             self._paint_blurred_shape(
                 image, item, horizontal, vertical, width, height,
-                scale, color, mask, globals_)
+                scale, color, mask, global_values)
             return
-        gradient = self._value(item, "fx_gradient", "", globals_)
+        gradient = self._value(item, "fx_gradient", "", global_values)
         if gradient == "BITMAP":
             self._paint_bitmap_shape(
                 image, item, horizontal, vertical, width, height,
-                mask, globals_)
+                mask, global_values)
+            return
+        if gradient not in ("", "NONE"):
+            self._paint_gradient_shape(
+                image, item, horizontal, vertical, width, height,
+                mask, global_values)
             return
         self._paint_solid_shape(
             image, horizontal, vertical, width, height, color, mask)
+
+    def _paint_gradient_shape(self, image, item, horizontal, vertical,
+                              width, height, mask, global_values):
+        tile = self._gradient_tile(
+            item, width, height, global_values)
+        transparent = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        masked = Image.composite(tile, transparent, mask)
+        box = [horizontal, vertical, horizontal + width, vertical + height]
+        composite = Image.alpha_composite(image.crop(box), masked)
+        image.paste(composite, (horizontal, vertical))
 
     def _paint_stroked_shape(self, image, item, horizontal, vertical,
                              width, height, scale, color, global_values):

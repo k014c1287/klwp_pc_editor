@@ -19,6 +19,62 @@ def first_or_empty(values):
     return ""
 
 
+class TouchActionValues:
+    @staticmethod
+    def update(original, action, switch="", intent="", music_action=""):
+        event = dict(original)
+        event["type"] = "SINGLE_TAP"
+        event["action"] = action
+        handlers = {
+            "SWITCH_GLOBAL": TouchActionValues._switch,
+            "MUSIC": TouchActionValues._music,
+            "LAUNCH_APP": TouchActionValues._intent,
+            "LAUNCH_SHORTCUT": TouchActionValues._intent,
+            "OPEN_LINK": TouchActionValues._intent,
+            "KUSTOM_ACTION": TouchActionValues._kustom,
+        }
+        handler = handlers.get(action, TouchActionValues._empty)
+        handler(event, switch, intent, music_action)
+        return event
+
+    @staticmethod
+    def _switch(event, switch, _intent, _music_action):
+        TouchActionValues._clear_external(event)
+        event["switch"] = switch
+
+    @staticmethod
+    def _music(event, _switch, _intent, music_action):
+        TouchActionValues._clear_external(event)
+        event.pop("switch", None)
+        if music_action:
+            event["music_action"] = music_action
+
+    @staticmethod
+    def _intent(event, _switch, intent, _music_action):
+        event.pop("switch", None)
+        event.pop("music_action", None)
+        event.pop("kustom_action", None)
+        event["intent"] = intent
+
+    @staticmethod
+    def _kustom(event, _switch, action, _music_action):
+        event.pop("switch", None)
+        event.pop("music_action", None)
+        event.pop("intent", None)
+        event["kustom_action"] = action
+
+    @staticmethod
+    def _empty(event, _switch, _intent, _music_action):
+        event.pop("switch", None)
+        TouchActionValues._clear_external(event)
+
+    @staticmethod
+    def _clear_external(event):
+        event.pop("intent", None)
+        event.pop("music_action", None)
+        event.pop("kustom_action", None)
+
+
 class SwitchReferenceCounter:
     def __init__(self, name):
         escaped = re.escape(str(name))

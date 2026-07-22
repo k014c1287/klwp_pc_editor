@@ -13,6 +13,8 @@ from .render.text import TextRendererMixin
 from .ui.interaction import InteractionMixin
 from .ui.settings import SettingsMixin
 from .ui.properties import PropertyPanelMixin
+from .ui.preview_values import PreviewValuesMixin
+from .ui.adb_transfer import AdbTransferMixin
 
 
 if HAS_TK:
@@ -28,6 +30,8 @@ if HAS_TK:
             InteractionMixin,
             SettingsMixin,
             PropertyPanelMixin,
+            PreviewValuesMixin,
+            AdbTransferMixin,
             tk.Tk):
         CANVAS_W, CANVAS_H = 420, 760
         HISTORY_LIMIT = 50

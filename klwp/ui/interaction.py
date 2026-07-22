@@ -148,6 +148,8 @@ class PreviewInteractionMixin:
             "LAUNCH_SHORTCUT": self._perform_shortcut_event,
             "LAUNCH_APP": self._perform_external_event,
             "MUSIC": self._perform_external_event,
+            "OPEN_LINK": self._perform_external_event,
+            "KUSTOM_ACTION": self._perform_external_event,
         }
         handler = handlers.get(action)
         if handler is None:

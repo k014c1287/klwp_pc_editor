@@ -24,7 +24,7 @@ except ImportError:
 
 try:
     from PIL import (Image, ImageTk, ImageDraw, ImageFilter, ImageFont,
-                     ImageChops)
+                     ImageChops, ImageEnhance, ImageOps)
     from PIL.Image import Resampling
     HAS_PIL = True
 except ImportError:

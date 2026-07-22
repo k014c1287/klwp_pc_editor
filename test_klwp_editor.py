@@ -11,6 +11,9 @@ import klwp_editor as ke
 from klwp.ui.property_panel import AnchorChoices
 from klwp.ui.color_control import KlwpColor
 from klwp.resize import ResizeHandleSet, ResizeSession
+from klwp.ui.global_dialog import GlobalEntryValues
+from klwp.ui.setting_values import TouchActionValues
+from klwp.adb import AdbDevices, AdbTransfer
 
 
 ROOT = Path(__file__).resolve().parent
@@ -34,6 +37,29 @@ class FormulaTests(unittest.TestCase):
             ke.sample_eval("H: $wf(max, 0)$°$wi(tempu)$"), "H: 29°C")
         self.assertEqual(
             ke.sample_eval("[b]TYPE WHALE[/b]"), "TYPE WHALE")
+
+    def test_extended_math_text_color_and_regex_functions(self):
+        self.assertEqual(ke.eval_formula("$mu(sqrt, 81)$"), 9)
+        self.assertEqual(ke.eval_formula('$tc(up, "Abc")$'), "ABC")
+        self.assertEqual(
+            ke.eval_formula('$if("Cloudy" ~= "cloud", yes, no)$'), "yes")
+        self.assertEqual(
+            ke.eval_formula("$ce(#FF0000, alpha, 50)$"), "#80FF0000")
+
+    def test_formula_functions_use_editable_preview_values(self):
+        values = {
+            "__preview__": {
+                "battery": {"level": 12.0},
+                "weather": {"temp": -3.0},
+                "media": {"title": "Edited Song"},
+                "location": {"loc": "Sapporo"},
+            },
+        }
+
+        self.assertEqual(ke.eval_formula("$bi(level)$", values), 12.0)
+        self.assertEqual(ke.eval_formula("$wi(temp)$", values), -3.0)
+        self.assertEqual(ke.eval_formula("$mi(title)$", values), "Edited Song")
+        self.assertEqual(ke.eval_formula("$li(loc)$", values), "Sapporo")
 
 
 class ShapeTemplateTests(unittest.TestCase):
@@ -93,6 +119,32 @@ class PropertyPanelTests(unittest.TestCase):
         self.assertEqual(KlwpColor("#123456").encoded(), "#FF123456")
         self.assertEqual(KlwpColor("invalid").encoded(), "#FFFFFFFF")
 
+    def test_non_switch_global_values_are_converted_without_losing_fields(self):
+        original = {"index": 3, "type": "NUMBER", "min": 0, "max": 720}
+
+        number = GlobalEntryValues.update(
+            original, "NUMBER", "size", "62.5", "")
+        color = GlobalEntryValues.update(
+            {"index": 4}, "COLOR", "accent", "#80aabbcc", "")
+
+        self.assertEqual(number["value"], 62.5)
+        self.assertEqual((number["min"], number["max"]), (0, 720))
+        self.assertEqual(color["value"], "#80AABBCC")
+
+    def test_external_touch_actions_use_klwp_event_keys(self):
+        launched = TouchActionValues.update(
+            {"unknown": 7}, "LAUNCH_APP", intent="intent:#Intent;end")
+        music = TouchActionValues.update(
+            {"intent": "old", "switch": "old"}, "MUSIC",
+            music_action="NEXT")
+
+        self.assertEqual(launched["intent"], "intent:#Intent;end")
+        self.assertEqual(launched["unknown"], 7)
+        self.assertNotIn("switch", launched)
+        self.assertEqual(music["music_action"], "NEXT")
+        self.assertNotIn("intent", music)
+        self.assertNotIn("switch", music)
+
 
 class ResizeTests(unittest.TestCase):
     def test_handle_hit_detection_includes_edges_and_corners(self):
@@ -131,6 +183,24 @@ class ResizeTests(unittest.TestCase):
 
 
 class ArchiveTests(unittest.TestCase):
+    def test_adb_transfer_selects_device_and_pushes_saved_preset(self):
+        output = "List of devices attached\nABC123\tdevice\n"
+        completed = type(
+            "Completed", (), {"returncode": 0, "stdout": output, "stderr": ""})()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory) / "wallpaper.klwp"
+            source.write_bytes(b"preset")
+            with patch("klwp.adb.subprocess.run", return_value=completed) as run:
+                device, destination = AdbTransfer("adb", source).send()
+
+        self.assertEqual(AdbDevices.connected(output), ("ABC123",))
+        self.assertEqual(device, "ABC123")
+        self.assertEqual(destination, "/sdcard/Kustom/wallpapers/wallpaper.klwp")
+        commands = [invocation.args[0] for invocation in run.call_args_list]
+        self.assertEqual(commands[0], ["adb", "devices"])
+        self.assertEqual(commands[1][-4:], ["shell", "mkdir", "-p", "/sdcard/Kustom/wallpapers"])
+        self.assertEqual(commands[2][3], "push")
+
     def test_imported_bitmap_uses_klwp_identifier_and_zip_flags(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
@@ -205,6 +275,21 @@ class ArchiveTests(unittest.TestCase):
 
             walk(archive.root_module())
             self.assertEqual(len(modules), count, name)
+
+    def test_official_legacy_samples_cover_additional_versions(self):
+        expected = {
+            "official_v1_Analog.klwp": 1,
+            "official_v3_CpuAndMem.klwp": 3,
+            "official_v4_BunchOfText.klwp": 4,
+            "official_v5_BlurClock.klwp": 5,
+        }
+
+        for name, version in expected.items():
+            archive = ke.KlwpArchive()
+            archive.load(SAMPLES / name)
+            information = archive["preset"]["preset_info"]
+            self.assertEqual(information["version"], version, name)
+            self.assertGreater(len(archive.modules()), 0, name)
 
     def test_round_trip_preserves_json_and_assets(self):
         for source in sorted(SAMPLES.glob("*.klwp")):
@@ -320,7 +405,7 @@ class RenderTests(unittest.TestCase):
         renderer.memory["photo_cache"] = {}
         renderer.memory["font_cache"] = {}
         renderer.memory["device_res"] = (
-            int(info["width"]), int(info["height"]))
+            int(info.get("width", 720)), int(info.get("height", 1280)))
         return renderer
 
     def test_scroll_fade_pages_crossfade(self):
@@ -423,6 +508,29 @@ class RenderTests(unittest.TestCase):
         self.assertAlmostEqual(transform["dx"], 0.0, places=6)
         self.assertAlmostEqual(transform["dy"], 1.5, places=6)
 
+    def test_switch_rotate_scale_filter_and_easing(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        item = ke.make_module("shape")
+        item["internal_animations"] = [
+            {"type": "SWITCH", "trigger": "active", "action": "ROTATE",
+             "amount": 90.0, "ease": "STRAIGHT"},
+            {"type": "SWITCH", "trigger": "active", "action": "SCALE",
+             "amount": 50.0, "ease": "STRAIGHT"},
+            {"type": "SWITCH", "trigger": "active",
+             "action": "COLOR_INVERT", "amount": 100.0,
+             "ease": "ACCELERATE"},
+        ]
+        renderer = self.renderer(archive)
+        renderer.memory["preview_switch_progress"] = {"active": 0.5}
+
+        transform = renderer._animation_transform(item)
+
+        self.assertEqual(transform["rotation"], 45.0)
+        self.assertEqual(transform["scale"], 1.25)
+        self.assertEqual(transform["color_filter"], "COLOR_INVERT")
+        self.assertEqual(transform["filter_amount"], 0.25)
+
     def test_all_samples_render_at_thumbnail_aspect(self):
         for source in sorted(SAMPLES.glob("*.klwp")):
             archive = ke.KlwpArchive()
@@ -488,6 +596,75 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(renderer._hit_item(
             bounds[0] + bounds[2] / 2,
             bounds[1] + bounds[3] / 2), child)
+
+    def test_komponent_scale_applies_to_size_content_and_child_bounds(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        component = ke.make_module("layer")
+        component["internal_type"] = "KomponentModule"
+        component["config_scale_value"] = 200.0
+        component["position_offset_x"] = 0.0
+        component["position_offset_y"] = 0.0
+        child = ke.make_shape_module("長方形")
+        child["shape_width"] = 100.0
+        child["shape_height"] = 50.0
+        child["position_offset_x"] = 0.0
+        child["position_offset_y"] = 0.0
+        component["viewgroup_items"].append(child)
+        archive.modules().append(component)
+        renderer = self.renderer(archive)
+
+        size = renderer._item_size(component, renderer._root_globals())
+        renderer.render_to_image(360, 600)
+        child_bounds = renderer._bounds(child)
+
+        self.assertEqual(size, (200.0, 100.0))
+        self.assertAlmostEqual(child_bounds[2], 200.0)
+        self.assertAlmostEqual(child_bounds[3], 100.0)
+
+    def test_linear_radial_and_sweep_gradients_render_distinct_colors(self):
+        for gradient in ("LINEAR", "RADIAL", "SWEEP"):
+            archive = ke.KlwpArchive()
+            archive.new(100, 100)
+            shape = ke.make_shape_module("長方形")
+            shape["shape_width"] = 100.0
+            shape["shape_height"] = 100.0
+            shape["position_anchor"] = "TOPLEFT"
+            shape["position_offset_x"] = 0.0
+            shape["position_offset_y"] = 0.0
+            shape["paint_color"] = "#FFFF0000"
+            shape["fx_gradient"] = gradient
+            shape["fx_gradient_color"] = "#FF0000FF"
+            archive.modules().append(shape)
+
+            image = self.renderer(archive).render_to_image(100, 100)
+            colors = image.getcolors(maxcolors=100_000)
+
+            self.assertGreater(len(colors), 8, gradient)
+
+    def test_multiply_paint_mode_blends_with_existing_content(self):
+        archive = ke.KlwpArchive()
+        archive.new(100, 100)
+        base = ke.make_shape_module("長方形")
+        base["shape_width"] = 720.0
+        base["shape_height"] = 720.0
+        base["position_anchor"] = "TOPLEFT"
+        base["position_offset_x"] = 0.0
+        base["position_offset_y"] = 0.0
+        base["paint_color"] = "#FF808080"
+        overlay = ke.make_shape_module("長方形")
+        overlay["shape_width"] = 720.0
+        overlay["shape_height"] = 720.0
+        overlay["position_anchor"] = "TOPLEFT"
+        overlay["position_offset_x"] = 0.0
+        overlay["position_offset_y"] = 0.0
+        overlay["paint_color"] = "#FFFF0000"
+        overlay["paint_mode"] = "MULTIPLY"
+        archive.modules().extend((base, overlay))
+
+        image = self.renderer(archive).render_to_image(100, 100)
+
+        self.assertEqual(image.getpixel((50, 50))[:3], (128, 0, 0))
 
     def test_all_dropdown_shapes_produce_nonempty_masks(self):
         archive = ke.KlwpArchive()
