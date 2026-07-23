@@ -86,6 +86,7 @@ class EditorWindowBuilder:
         tree.bind("<ButtonPress-1>", owner._on_tree_press, add="+")
         tree.bind("<B1-Motion>", owner._on_tree_drag, add="+")
         tree.bind("<ButtonRelease-1>", owner._on_tree_release, add="+")
+        tree.bind("<Delete>", owner._on_delete_shortcut)
         owner.memory['tree'] = tree
         body.add(frame, weight=1)
 

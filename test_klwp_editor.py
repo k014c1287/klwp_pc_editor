@@ -236,6 +236,34 @@ class ModuleTreeTests(unittest.TestCase):
         self.assertIsNone(editor.memory['selected'])
         self.assertIs(editor._target_list(), archive.modules())
 
+    def test_delete_shortcut_removes_selected_tree_item(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        item = ke.make_module("text")
+        archive.modules().append(item)
+        editor = DocumentMixin()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory['tree'] = Mock()
+        editor.memory['tree'].selection.return_value = ("item-row",)
+        editor.memory['tree_map'] = {
+            "item-row": (item, archive.modules()),
+        }
+        editor.memory['selected'] = item
+        editor.memory['archive'] = archive
+        editor._mark_dirty = Mock()
+        editor._refresh_all = Mock()
+
+        with patch(
+                "klwp.ui.document.messagebox.askyesno",
+                return_value=True):
+            result = editor._on_delete_shortcut()
+
+        self.assertEqual(result, "break")
+        self.assertEqual(archive.modules(), [])
+        self.assertIsNone(editor.memory['selected'])
+        editor._mark_dirty.assert_called_once_with()
+        editor._refresh_all.assert_called_once_with()
+
 
 class PreviewPageTests(unittest.TestCase):
     def test_page_count_uses_and_updates_klwp_xscreens(self):
