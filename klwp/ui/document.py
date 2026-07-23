@@ -171,6 +171,10 @@ class DocumentMixin(DocumentLifecycleMixin):
         self.cmd_redo()
         return "break"
 
+    def _on_delete_shortcut(self, _event=None):
+        self.cmd_delete()
+        return "break"
+
     def _target_list(self):
         selected = self.memory['selected']
         if selected is not None and "viewgroup_items" in selected:
