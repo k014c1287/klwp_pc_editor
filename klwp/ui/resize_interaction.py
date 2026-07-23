@@ -40,8 +40,8 @@ class ResizeInteractionMixin:
         if self._interaction_enabled():
             canvas.configure(cursor="")
             return
-        scale = memory.optional("_scale", 1.0)
-        handle = self._resize_handle_at(event.x / scale, event.y / scale)
+        horizontal, vertical = self._document_point(event)
+        handle = self._resize_handle_at(horizontal, vertical)
         canvas.configure(cursor=ResizeHandleSet.cursor(handle))
 
     def _drag_resize(self, event):
@@ -49,8 +49,8 @@ class ResizeInteractionMixin:
         state = memory.optional("resize_state")
         if state is None:
             return False
-        scale = memory["_scale"]
-        target = state.apply(event.x / scale, event.y / scale)
+        horizontal, vertical = self._document_point(event)
+        target = state.apply(horizontal, vertical)
         self._align_resized_item(state, target)
         self._render()
         return True

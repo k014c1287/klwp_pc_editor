@@ -20,8 +20,10 @@ from klwp.ui.document import DocumentMixin
 from klwp.ui.window import EditorWindowBuilder
 from klwp.adb import AdbDevices, AdbTransfer
 from klwp.preview.pages import PresetPageCount, PreviewPageCounter
+from klwp.preview.zoom import PreviewZoom
 from klwp.ui.tree import ModuleTreePresentation
 from klwp.ui.tree_drag import TreeDragMixin, TreeReorder
+from klwp.ui.zoom import PreviewZoomMixin
 
 
 ROOT = Path(__file__).resolve().parent
@@ -304,6 +306,48 @@ class PreviewPageTests(unittest.TestCase):
             counter = PreviewPageCounter(
                 archive.root_module(), information)
             self.assertEqual(counter.count(), count, name)
+
+
+class PreviewZoomTests(unittest.TestCase):
+    def test_selection_zoom_is_clamped_and_larger_than_fit(self):
+        zoom = PreviewZoom.for_selection(
+            (300.0, 500.0, 120.0, 80.0),
+            (720.0, 1600.0), (420.0, 760.0))
+        tiny = PreviewZoom.for_selection(
+            (300.0, 500.0, 1.0, 1.0),
+            (720.0, 1600.0), (420.0, 760.0))
+
+        self.assertGreater(zoom.number(), 1.0)
+        self.assertLessEqual(zoom.number(), PreviewZoom.MAXIMUM)
+        self.assertEqual(tiny.number(), PreviewZoom.MAXIMUM)
+        self.assertEqual(PreviewZoom(1.0).decreased().number(), 1.0)
+
+    def test_zoomed_canvas_coordinates_include_crop_origin(self):
+        view = PreviewZoomMixin()
+        view.memory = ke.ApplicationMemory()
+        view.memory["_scale"] = 2.0
+        view.memory["_view_origin"] = (100.0, 50.0)
+        event = type("Event", (), {"x": 20.0, "y": 30.0})()
+
+        self.assertEqual(view._document_point(event), (60.0, 40.0))
+
+    def test_canvas_zoom_clamps_crop_to_rendered_document(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        renderer = object.__new__(ke.EditorApp)
+        renderer.memory = ke.ApplicationMemory()
+        renderer.memory["archive"] = archive
+        renderer.memory["device_res"] = (1080, 2400)
+        renderer.memory["preview_zoom"] = 2.0
+        renderer.memory["_view_origin"] = (9999.0, 9999.0)
+        canvas = Mock()
+
+        rendered_size = renderer._configure_canvas(canvas)
+
+        self.assertEqual(rendered_size, (684, 1520))
+        self.assertEqual(renderer.memory["_viewport_size"], (420, 760))
+        self.assertEqual(renderer.memory["_view_origin"], (264, 760))
+        canvas.config.assert_called_once_with(width=420, height=760)
 
 
 class ResizeTests(unittest.TestCase):

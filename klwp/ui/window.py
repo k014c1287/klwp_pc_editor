@@ -118,6 +118,7 @@ class EditorWindowBuilder:
 
     def _preview(self, body):
         frame = ttk.Frame(body)
+        self._zoom_controls(frame)
         self._canvas(frame)
         self._animation_controls(frame)
         status = ttk.Label(frame, text="")
@@ -127,12 +128,33 @@ class EditorWindowBuilder:
         memory['status'] = status
         body.add(frame, weight=0)
 
+    def _zoom_controls(self, frame):
+        owner = self._owner
+        controls = ttk.Frame(frame)
+        controls.pack(fill="x", padx=8, pady=(6, 0))
+        ttk.Label(controls, text="編集表示").pack(side="left")
+        ttk.Button(
+            controls, text="−", width=3,
+            command=owner.cmd_zoom_out).pack(side="left", padx=(6, 2))
+        label = ttk.Label(controls, text="100%", width=6, anchor="center")
+        label.pack(side="left")
+        owner.memory["preview_zoom_label"] = label
+        ttk.Button(
+            controls, text="＋", width=3,
+            command=owner.cmd_zoom_in).pack(side="left", padx=2)
+        ttk.Button(
+            controls, text="選択を拡大",
+            command=owner.cmd_zoom_selected).pack(side="left", padx=4)
+        ttk.Button(
+            controls, text="全体表示",
+            command=owner.cmd_zoom_reset).pack(side="left")
+
     def _canvas(self, frame):
         owner = self._owner
         canvas = tk.Canvas(
             frame, width=owner.CANVAS_W, height=owner.CANVAS_H,
             bg="#101018", highlightthickness=0)
-        canvas.pack(padx=8, pady=8)
+        canvas.pack(padx=8, pady=(4, 8))
         canvas.bind("<ButtonPress-1>", owner._on_canvas_press)
         canvas.bind("<B1-Motion>", owner._on_canvas_drag)
         canvas.bind("<ButtonRelease-1>", owner._on_canvas_release)

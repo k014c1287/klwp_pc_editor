@@ -16,6 +16,7 @@ from .ui.properties import PropertyPanelMixin
 from .ui.preview_values import PreviewValuesMixin
 from .ui.adb_transfer import AdbTransferMixin
 from .ui.tree_drag import TreeDragMixin
+from .ui.zoom import PreviewZoomMixin
 
 
 if HAS_TK:
@@ -34,6 +35,7 @@ if HAS_TK:
             PreviewValuesMixin,
             AdbTransferMixin,
             TreeDragMixin,
+            PreviewZoomMixin,
             tk.Tk):
         CANVAS_W, CANVAS_H = 420, 760
         HISTORY_LIMIT = 50

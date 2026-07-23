@@ -240,8 +240,7 @@ class InteractionMixin(PreviewInteractionMixin, ResizeInteractionMixin):
         if self._interaction_enabled():
             self._start_interaction_drag(event)
             return
-        scale = self.memory['_scale']
-        horizontal, vertical = event.x / scale, event.y / scale
+        horizontal, vertical = self._document_point(event)
         if self._start_resize(horizontal, vertical):
             return
         hit = self._hit_item(horizontal, vertical)
@@ -318,14 +317,14 @@ class InteractionMixin(PreviewInteractionMixin, ResizeInteractionMixin):
         self._set_preview_scroll(state["page"] - difference / canvas_width)
 
     def _drag_selected_item(self, event):
-        scale = self.memory['_scale']
         initial_horizontal, initial_vertical = self.memory['drag_state']
-        difference_horizontal = event.x / scale - initial_horizontal
-        difference_vertical = event.y / scale - initial_vertical
+        horizontal, vertical = self._document_point(event)
+        difference_horizontal = horizontal - initial_horizontal
+        difference_vertical = vertical - initial_vertical
         selected = self.memory['selected']
         mutation = self._position_mutation(selected)
         mutation.move_by(difference_horizontal, difference_vertical)
-        self.memory['drag_state'] = (event.x / scale, event.y / scale)
+        self.memory['drag_state'] = (horizontal, vertical)
         self._render()
 
     def _position_mutation(self, item):
@@ -351,5 +350,5 @@ class InteractionMixin(PreviewInteractionMixin, ResizeInteractionMixin):
         if state["moved"]:
             self._start_scroll_transition(round(self.memory['preview_scroll']))
             return
-        scale = self.memory['_scale']
-        self._trigger_tap_at(event.x / scale, event.y / scale)
+        horizontal, vertical = self._document_point(event)
+        self._trigger_tap_at(horizontal, vertical)

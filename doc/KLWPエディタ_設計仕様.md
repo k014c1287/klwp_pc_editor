@@ -105,6 +105,20 @@ classDiagram
         -_on_tree_drag(event)
         -_on_tree_release(event)
     }
+    class PreviewZoomMixin {
+        +cmd_zoom_in()
+        +cmd_zoom_out()
+        +cmd_zoom_selected()
+        +cmd_zoom_reset()
+        -_document_point(event)
+    }
+    class PreviewZoom {
+        -_value
+        +number()
+        +percentage()
+        +scale(document_size, viewport_size)
+        +for_selection(bounds, document_size, viewport_size)
+    }
     class ApplicationMemory {
         -_values
         +optional(name, default)
@@ -132,6 +146,7 @@ classDiagram
     PreviewValuesMixin <|-- EditorApp
     AdbTransferMixin <|-- EditorApp
     TreeDragMixin <|-- EditorApp
+    PreviewZoomMixin <|-- EditorApp
 
     CompositorLeafMixin <|-- CompositorMixin
     ShapeGeometryMixin <|-- ShapeRendererMixin
@@ -144,6 +159,8 @@ classDiagram
     ResizeInteractionMixin ..> PositionMutation : preserve opposite edge
     DocumentMixin ..> PositionMutation : duplicate shift
     CanvasRendererMixin ..> ResizeHandleSet : selection handles
+    CanvasRendererMixin ..> PreviewZoom : render scale
+    PreviewZoomMixin ..> PreviewZoom : edit view
 
     EditorApp *-- ApplicationMemory : memory
     BootstrapMixin ..> EditorWindowBuilder : builds
@@ -1018,6 +1035,38 @@ sequenceDiagram
     Canvas-->>User: 切替後の背景を表示
 ```
 
+### 3.11 選択要素の編集ズーム
+
+編集表示のズームは100～400%のプレビュー専用状態です。「選択を拡大」は要素の境界が表示領域の約70%へ収まる倍率を計算し、その中心へクロップ位置を移動します。`−` / `＋` は段階的な倍率変更、「全体表示」は100%と原点へ復帰します。ズーム倍率とクロップ原点は `ApplicationMemory` にだけ保持し、`.klwp` の位置・サイズ・画像には保存しません。
+
+ズーム中もヒットテスト、ドラッグ、リサイズ、タップ判定は文書座標で処理します。画面上のポインタ座標へクロップ原点を加え、描画倍率で割って文書座標へ戻すため、拡大表示がアイテムの保存値を歪めることはありません。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Zoom as PreviewZoomMixin
+    participant Value as PreviewZoom
+    participant Memory as ApplicationMemory
+    participant Canvas as CanvasRendererMixin
+    participant Interaction as InteractionMixin
+    participant Item as 選択要素
+
+    User->>Zoom: 選択を拡大
+    Zoom->>Item: boundsを取得
+    Zoom->>Value: for_selection(bounds, document, viewport)
+    Value-->>Zoom: 1.0～4.0の倍率
+    Zoom->>Memory: preview_zoomと_view_originを保存
+    Zoom->>Canvas: _render()
+    Canvas->>Value: scale(document, viewport)
+    Canvas->>Canvas: 全体を倍率描画して表示領域をcrop
+    Canvas-->>User: 選択要素を中心に拡大表示
+    User->>Interaction: ドラッグまたはリサイズ
+    Interaction->>Zoom: _document_point(event)
+    Zoom-->>Interaction: (event + crop origin) / scale
+    Interaction->>Item: 文書座標の値だけを更新
+```
+
 ## 4. 状態とデータの境界
 
 ### 4.1 `ApplicationMemory` の主な内容
@@ -1029,7 +1078,7 @@ sequenceDiagram
 | UI | `tree`, `canvas`, `status`, 各ボタン | 保存しない |
 | キャッシュ | `photo_cache`, `font_cache`, `_photo`, `_item_bounds` | 保存しない |
 | 編集操作 | `drag_state`, `resize_state`, `tree_drag` | 保存しない |
-| プレビュー | `preview_scroll`, `preview_switches`, `preview_switch_progress`, `preview_values`, `preview_ts` | 保存しない |
+| プレビュー | `preview_scroll`, `preview_switches`, `preview_switch_progress`, `preview_values`, `preview_ts`, `preview_zoom`, `_view_origin` | 保存しない |
 | アニメーション | `_switch_transitions`, `_scroll_transition`, `_loop_started_at` | 保存しない |
 | イベント | `_event_regions`, `interaction_drag` | 保存しない |
 

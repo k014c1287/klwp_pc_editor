@@ -1,6 +1,7 @@
 """Render the document into Pillow and present it on the Tk canvas."""
 
 from ..shared import *  # noqa: F401,F403
+from ..preview.zoom import PreviewZoom
 from ..resize import ResizeHandleSet
 
 
@@ -13,21 +14,45 @@ class CanvasRendererMixin:
             self._paint_missing_pillow(canvas)
             return
         image = self.render_to_image(pixel_width, pixel_height)
-        self.memory['_photo'] = ImageTk.PhotoImage(image.convert("RGB"))
+        preview = self._preview_crop(image)
+        self.memory['_photo'] = ImageTk.PhotoImage(preview.convert("RGB"))
         canvas.create_image(0, 0, image=self.memory['_photo'], anchor="nw")
         self._paint_selection(canvas)
 
     def _configure_canvas(self, canvas):
         document_width, document_height = self._doc_size()
-        scale = min(
-            self.CANVAS_W / document_width,
-            self.CANVAS_H / document_height)
-        self.memory['_scale'] = scale
-        self.memory['_doc'] = (document_width, document_height)
+        memory = self.memory
+        zoom = PreviewZoom(memory.optional("preview_zoom", 1.0))
+        scale = zoom.scale(
+            (document_width, document_height),
+            (self.CANVAS_W, self.CANVAS_H))
+        memory['_scale'] = scale
+        memory['_doc'] = (document_width, document_height)
         pixel_width = int(document_width * scale)
         pixel_height = int(document_height * scale)
-        canvas.config(width=pixel_width, height=pixel_height)
+        viewport_width = min(self.CANVAS_W, pixel_width)
+        viewport_height = min(self.CANVAS_H, pixel_height)
+        memory["_viewport_size"] = (viewport_width, viewport_height)
+        self._clamp_view_origin(
+            pixel_width, pixel_height, viewport_width, viewport_height)
+        canvas.config(width=viewport_width, height=viewport_height)
         return pixel_width, pixel_height
+
+    def _clamp_view_origin(self, width, height, viewport_width, viewport_height):
+        memory = self.memory
+        horizontal, vertical = memory.optional(
+            "_view_origin", (0.0, 0.0))
+        maximum_horizontal = max(0, width - viewport_width)
+        maximum_vertical = max(0, height - viewport_height)
+        horizontal = max(0, min(maximum_horizontal, round(horizontal)))
+        vertical = max(0, min(maximum_vertical, round(vertical)))
+        memory["_view_origin"] = (horizontal, vertical)
+
+    def _preview_crop(self, image):
+        horizontal, vertical = self.memory["_view_origin"]
+        width, height = self.memory["_viewport_size"]
+        left, top = int(horizontal), int(vertical)
+        return image.crop((left, top, left + width, top + height))
 
     def _paint_missing_pillow(self, canvas):
         canvas.create_text(
@@ -44,20 +69,25 @@ class CanvasRendererMixin:
             return
         horizontal, vertical, width, height = bounds
         scale = self.memory['_scale']
+        origin_horizontal, origin_vertical = self.memory["_view_origin"]
         canvas.create_rectangle(
-            horizontal * scale, vertical * scale,
-            (horizontal + width) * scale, (vertical + height) * scale,
+            horizontal * scale - origin_horizontal,
+            vertical * scale - origin_vertical,
+            (horizontal + width) * scale - origin_horizontal,
+            (vertical + height) * scale - origin_vertical,
             outline="#00E5FF", width=2, dash=(4, 3))
-        self._paint_resize_handles(canvas, selected, bounds, scale)
+        origin = (origin_horizontal, origin_vertical)
+        self._paint_resize_handles(canvas, selected, bounds, scale, origin)
 
     @staticmethod
-    def _paint_resize_handles(canvas, item, bounds, scale):
+    def _paint_resize_handles(canvas, item, bounds, scale, origin):
         if not ResizeHandleSet.supports(item):
             return
+        origin_horizontal, origin_vertical = origin
         radius = 4
         for _name, horizontal, vertical in ResizeHandleSet.positions(bounds):
-            pixel_horizontal = horizontal * scale
-            pixel_vertical = vertical * scale
+            pixel_horizontal = horizontal * scale - origin_horizontal
+            pixel_vertical = vertical * scale - origin_vertical
             canvas.create_rectangle(
                 pixel_horizontal - radius, pixel_vertical - radius,
                 pixel_horizontal + radius, pixel_vertical + radius,
