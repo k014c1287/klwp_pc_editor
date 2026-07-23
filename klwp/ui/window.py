@@ -159,6 +159,9 @@ class EditorWindowBuilder:
         canvas.bind("<B1-Motion>", owner._on_canvas_drag)
         canvas.bind("<ButtonRelease-1>", owner._on_canvas_release)
         canvas.bind("<Motion>", owner._on_canvas_motion)
+        canvas.bind("<Control-MouseWheel>", owner._on_preview_zoom_wheel)
+        canvas.bind("<Control-Button-4>", owner._on_preview_zoom_wheel)
+        canvas.bind("<Control-Button-5>", owner._on_preview_zoom_wheel)
         owner.memory['canvas'] = canvas
 
     def _animation_controls(self, frame):

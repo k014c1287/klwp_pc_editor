@@ -32,6 +32,41 @@ class PreviewZoomMixin:
             bounds, self._doc_size(), (self.CANVAS_W, self.CANVAS_H))
         self._apply_preview_zoom(zoom)
 
+    def _on_preview_zoom_wheel(self, event):
+        current = self._current_preview_zoom()
+        target = self._wheel_zoom(current, event)
+        if target.number() == current.number():
+            return "break"
+        document_point = self._document_point(event)
+        memory = self.memory
+        memory["preview_zoom"] = target.number()
+        memory["_view_origin"] = self._pointer_focused_origin(
+            document_point, event, target)
+        self._update_preview_zoom_label()
+        self._render()
+        return "break"
+
+    @staticmethod
+    def _wheel_zoom(current, event):
+        delta = float(getattr(event, "delta", 0.0))
+        if delta > 0:
+            return current.increased()
+        if delta < 0:
+            return current.decreased()
+        button = int(getattr(event, "num", 0))
+        if button == 4:
+            return current.increased()
+        if button == 5:
+            return current.decreased()
+        return current
+
+    def _pointer_focused_origin(self, document_point, event, zoom):
+        document_size = self._doc_size()
+        viewport_size = (self.CANVAS_W, self.CANVAS_H)
+        scale = zoom.scale(document_size, viewport_size)
+        horizontal, vertical = document_point
+        return horizontal * scale - event.x, vertical * scale - event.y
+
     def _apply_preview_zoom(self, zoom):
         self.memory["preview_zoom"] = zoom.number()
         self._focus_preview_on_selected()

@@ -349,6 +349,33 @@ class PreviewZoomTests(unittest.TestCase):
         self.assertEqual(renderer.memory["_view_origin"], (264, 760))
         canvas.config.assert_called_once_with(width=420, height=760)
 
+    def test_control_wheel_zoom_keeps_pointer_position(self):
+        view = PreviewZoomMixin()
+        view.CANVAS_W, view.CANVAS_H = 420, 760
+        view.memory = ke.ApplicationMemory()
+        view.memory["preview_zoom"] = 1.0
+        view.memory["_scale"] = 0.475
+        view.memory["_view_origin"] = (10.0, 20.0)
+        view._doc_size = lambda: (720.0, 1600.0)
+        view._render = Mock()
+        event = type("Event", (), {
+            "x": 20.0, "y": 30.0, "delta": 120, "num": 0,
+        })()
+        original_point = view._document_point(event)
+
+        result = view._on_preview_zoom_wheel(event)
+
+        self.assertEqual(result, "break")
+        self.assertEqual(view.memory["preview_zoom"], 1.5)
+        self.assertEqual(view.memory["_view_origin"], (25.0, 45.0))
+        new_scale = PreviewZoom(1.5).scale(
+            (720.0, 1600.0), (420.0, 760.0))
+        new_horizontal = (event.x + 25.0) / new_scale
+        new_vertical = (event.y + 45.0) / new_scale
+        self.assertAlmostEqual(new_horizontal, original_point[0])
+        self.assertAlmostEqual(new_vertical, original_point[1])
+        view._render.assert_called_once_with()
+
 
 class ResizeTests(unittest.TestCase):
     def test_handle_hit_detection_includes_edges_and_corners(self):
