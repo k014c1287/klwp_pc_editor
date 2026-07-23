@@ -20,7 +20,7 @@ from klwp.ui.document import DocumentMixin
 from klwp.ui.window import EditorWindowBuilder
 from klwp.adb import AdbDevices, AdbTransfer
 from klwp.preview.pages import PresetPageCount, PreviewPageCounter
-from klwp.preview.zoom import PreviewZoom
+from klwp.preview.zoom import CachedPreviewImage, PreviewZoom
 from klwp.ui.tree import ModuleTreePresentation
 from klwp.ui.tree_drag import TreeDragMixin, TreeReorder
 from klwp.ui.zoom import PreviewZoomMixin
@@ -357,7 +357,9 @@ class PreviewZoomTests(unittest.TestCase):
         view.memory["_scale"] = 0.475
         view.memory["_view_origin"] = (10.0, 20.0)
         view._doc_size = lambda: (720.0, 1600.0)
-        view._render = Mock()
+        view._render_zoom_preview = Mock()
+        view.after = Mock(return_value="quality-render")
+        view.after_cancel = Mock()
         event = type("Event", (), {
             "x": 20.0, "y": 30.0, "delta": 120, "num": 0,
         })()
@@ -374,7 +376,59 @@ class PreviewZoomTests(unittest.TestCase):
         new_vertical = (event.y + 45.0) / new_scale
         self.assertAlmostEqual(new_horizontal, original_point[0])
         self.assertAlmostEqual(new_vertical, original_point[1])
+        view._render_zoom_preview.assert_called_once_with()
+        view.after.assert_called_once_with(
+            PreviewZoom.SETTLE_MILLISECONDS, view._finish_preview_zoom)
+
+    def test_quality_render_is_replaced_until_wheel_stops(self):
+        view = PreviewZoomMixin()
+        view.memory = ke.ApplicationMemory()
+        view.after = Mock(side_effect=("quality-1", "quality-2"))
+        view.after_cancel = Mock()
+        view._render = Mock()
+
+        view._schedule_zoom_quality_render()
+        view._schedule_zoom_quality_render()
+        view._finish_preview_zoom()
+
+        view.after_cancel.assert_called_once_with("quality-1")
+        self.assertIsNone(view.memory["_zoom_render_after_id"])
         view._render.assert_called_once_with()
+
+    @unittest.skipUnless(ke.HAS_PIL, "Pillow is required")
+    def test_cached_preview_scales_only_requested_viewport(self):
+        source = ke.Image.new("RGB", (342, 760), "#123456")
+
+        preview = CachedPreviewImage(source).viewport(
+            (1368, 3040), (420, 760), (200, 400))
+
+        self.assertEqual(preview.size, (420, 760))
+        self.assertEqual(preview.getpixel((200, 300)), (18, 52, 86))
+
+    @unittest.skipUnless(ke.HAS_TK and ke.HAS_PIL, "Tkinter/Pillow required")
+    def test_quality_render_is_reused_by_wheel_preview(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        renderer = object.__new__(ke.EditorApp)
+        renderer.memory = ke.ApplicationMemory()
+        renderer.memory["archive"] = archive
+        renderer.memory["photo_cache"] = {}
+        renderer.memory["font_cache"] = {}
+        renderer.memory["device_res"] = (1080, 2400)
+        renderer.memory["preview_zoom"] = 1.0
+        renderer.memory["_view_origin"] = (0.0, 0.0)
+        renderer.memory["selected"] = None
+        renderer.memory["canvas"] = Mock()
+        with patch("klwp.render.canvas.ImageTk.PhotoImage"):
+            renderer._render()
+        quality = renderer.memory["_quality_preview"]
+        renderer.memory["preview_zoom"] = 1.5
+        with patch("klwp.render.zoom.ImageTk.PhotoImage"):
+            renderer._render_zoom_preview()
+
+        self.assertEqual(quality.size, (342, 760))
+        self.assertIs(renderer.memory["_quality_preview"], quality)
+        self.assertEqual(renderer.memory["_viewport_size"], (420, 760))
 
 
 class ResizeTests(unittest.TestCase):

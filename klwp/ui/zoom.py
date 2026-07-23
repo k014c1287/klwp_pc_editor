@@ -13,6 +13,7 @@ class PreviewZoomMixin:
         self._apply_preview_zoom(zoom.decreased())
 
     def cmd_zoom_reset(self):
+        self._cancel_zoom_quality_render()
         self.memory["preview_zoom"] = PreviewZoom.MINIMUM
         self.memory["_view_origin"] = (0.0, 0.0)
         self._update_preview_zoom_label()
@@ -43,8 +44,30 @@ class PreviewZoomMixin:
         memory["_view_origin"] = self._pointer_focused_origin(
             document_point, event, target)
         self._update_preview_zoom_label()
-        self._render()
+        self._render_zoom_preview()
+        self._schedule_zoom_quality_render()
         return "break"
+
+    def _schedule_zoom_quality_render(self):
+        memory = self.memory
+        identifier = memory.optional("_zoom_render_after_id")
+        if identifier is not None:
+            self.after_cancel(identifier)
+        callback = self._finish_preview_zoom
+        identifier = self.after(PreviewZoom.SETTLE_MILLISECONDS, callback)
+        memory["_zoom_render_after_id"] = identifier
+
+    def _finish_preview_zoom(self):
+        self.memory["_zoom_render_after_id"] = None
+        self._render()
+
+    def _cancel_zoom_quality_render(self):
+        memory = self.memory
+        identifier = memory.optional("_zoom_render_after_id")
+        if identifier is None:
+            return
+        self.after_cancel(identifier)
+        memory["_zoom_render_after_id"] = None
 
     @staticmethod
     def _wheel_zoom(current, event):
@@ -68,6 +91,7 @@ class PreviewZoomMixin:
         return horizontal * scale - event.x, vertical * scale - event.y
 
     def _apply_preview_zoom(self, zoom):
+        self._cancel_zoom_quality_render()
         self.memory["preview_zoom"] = zoom.number()
         self._focus_preview_on_selected()
         self._update_preview_zoom_label()
@@ -124,6 +148,7 @@ class PreviewZoomMixin:
         label.configure(text=f"{percentage}%")
 
     def _reset_preview_zoom(self):
+        self._cancel_zoom_quality_render()
         self.memory["preview_zoom"] = PreviewZoom.MINIMUM
         self.memory["_view_origin"] = (0.0, 0.0)
         self._update_preview_zoom_label()

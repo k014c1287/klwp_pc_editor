@@ -5,6 +5,7 @@ from .ui.bootstrap import BootstrapMixin
 from .ui.document import DocumentMixin
 from .preview.model import PreviewModelMixin
 from .render.canvas import CanvasRendererMixin
+from .render.zoom import ZoomPreviewRendererMixin
 from .render.layout import LayoutMixin
 from .render.compositor import CompositorMixin
 from .render.shapes import ShapeRendererMixin
@@ -24,6 +25,7 @@ if HAS_TK:
             DocumentMixin,
             PreviewModelMixin,
             CanvasRendererMixin,
+            ZoomPreviewRendererMixin,
             LayoutMixin,
             CompositorMixin,
             ShapeRendererMixin,

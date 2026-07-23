@@ -1,10 +1,13 @@
 """Calculate transient preview magnification without changing KLWP data."""
 
+from ..runtime import Resampling, Transform
+
 
 class PreviewZoom:
     MINIMUM = 1.0
     MAXIMUM = 4.0
     STEP = 1.5
+    SETTLE_MILLISECONDS = 140
 
     def __init__(self, value=1.0):
         self._value = self._normalized(value)
@@ -46,3 +49,24 @@ class PreviewZoom:
     def _normalized(cls, value):
         numeric = float(value)
         return max(cls.MINIMUM, min(cls.MAXIMUM, numeric))
+
+
+class CachedPreviewImage:
+    """Scale only the visible viewport from the last quality render."""
+
+    def __init__(self, image):
+        self._image = image
+
+    def viewport(self, target_size, viewport_size, origin):
+        image = self._image
+        source_width, source_height = image.size
+        target_width, target_height = target_size
+        horizontal_ratio = source_width / max(1, target_width)
+        vertical_ratio = source_height / max(1, target_height)
+        horizontal, vertical = origin
+        coefficients = (
+            horizontal_ratio, 0.0, horizontal * horizontal_ratio,
+            0.0, vertical_ratio, vertical * vertical_ratio)
+        return image.transform(
+            viewport_size, Transform.AFFINE, coefficients,
+            resample=Resampling.BILINEAR)

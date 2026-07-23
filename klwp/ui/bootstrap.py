@@ -36,6 +36,7 @@ class BootstrapMixin:
         memory['resize_state'] = None
         memory['preview_zoom'] = 1.0
         memory['_view_origin'] = (0.0, 0.0)
+        memory['_quality_preview'] = None
 
     def _initialize_preview_memory(self):
         memory = self.memory
@@ -46,6 +47,7 @@ class BootstrapMixin:
         memory['_switch_transitions'] = {}
         memory['_scroll_transition'] = None
         memory['_animation_after_id'] = None
+        memory['_zoom_render_after_id'] = None
         memory['_loop_started_at'] = None
         memory['_event_regions'] = []
 

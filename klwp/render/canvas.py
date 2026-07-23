@@ -14,6 +14,7 @@ class CanvasRendererMixin:
             self._paint_missing_pillow(canvas)
             return
         image = self.render_to_image(pixel_width, pixel_height)
+        self.memory["_quality_preview"] = image
         preview = self._preview_crop(image)
         self.memory['_photo'] = ImageTk.PhotoImage(preview.convert("RGB"))
         canvas.create_image(0, 0, image=self.memory['_photo'], anchor="nw")
