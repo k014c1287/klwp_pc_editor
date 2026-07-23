@@ -172,7 +172,9 @@ class DocumentMixin(DocumentLifecycleMixin):
         return "break"
 
     def _on_delete_shortcut(self, _event=None):
-        self.cmd_delete()
+        target = self._deletion_target()
+        if target is not None:
+            self._delete_target(target)
         return "break"
 
     def _target_list(self):
@@ -220,13 +222,28 @@ class DocumentMixin(DocumentLifecycleMixin):
         self._refresh_all(select=clone)
 
     def cmd_delete(self):
+        target = self._deletion_target()
+        if target is None:
+            return
+        item, _parent = target
+        if not self._confirmed_deletion(item):
+            return
+        self._delete_target(target)
+
+    def _deletion_target(self):
         identifier = self._selected_iid()
         if not identifier:
-            return
-        item, parent = self.memory['tree_map'][identifier]
+            return None
+        tree_map = self.memory['tree_map']
+        return tree_map.get(identifier)
+
+    @staticmethod
+    def _confirmed_deletion(item):
         question = f"「{module_label(item)}」を削除しますか？"
-        if not messagebox.askyesno(APP_TITLE, question):
-            return
+        return messagebox.askyesno(APP_TITLE, question)
+
+    def _delete_target(self, target):
+        item, parent = target
         parent.remove(item)
         self.memory['selected'] = None
         self._mark_dirty()

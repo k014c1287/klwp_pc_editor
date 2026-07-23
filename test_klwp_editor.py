@@ -17,6 +17,7 @@ from klwp.background import BackgroundImageBinding, BitmapGlobalCollection
 from klwp.ui.global_dialog import GlobalEntryValues
 from klwp.ui.setting_values import TouchActionValues
 from klwp.ui.document import DocumentMixin
+from klwp.ui.window import EditorWindowBuilder
 from klwp.adb import AdbDevices, AdbTransfer
 from klwp.preview.pages import PresetPageCount, PreviewPageCounter
 from klwp.ui.tree import ModuleTreePresentation
@@ -236,7 +237,7 @@ class ModuleTreeTests(unittest.TestCase):
         self.assertIsNone(editor.memory['selected'])
         self.assertIs(editor._target_list(), archive.modules())
 
-    def test_delete_shortcut_removes_selected_tree_item(self):
+    def test_delete_shortcut_removes_item_without_confirmation(self):
         archive = ke.KlwpArchive()
         archive.new()
         item = ke.make_module("text")
@@ -254,15 +255,29 @@ class ModuleTreeTests(unittest.TestCase):
         editor._refresh_all = Mock()
 
         with patch(
-                "klwp.ui.document.messagebox.askyesno",
-                return_value=True):
+                "klwp.ui.document.messagebox.askyesno") as confirmation:
             result = editor._on_delete_shortcut()
 
         self.assertEqual(result, "break")
+        confirmation.assert_not_called()
         self.assertEqual(archive.modules(), [])
         self.assertIsNone(editor.memory['selected'])
         editor._mark_dirty.assert_called_once_with()
         editor._refresh_all.assert_called_once_with()
+
+
+class KeyboardShortcutTests(unittest.TestCase):
+    def test_control_z_and_control_y_bind_to_history_commands(self):
+        owner = Mock()
+
+        EditorWindowBuilder(owner)._keyboard_shortcuts()
+
+        owner.bind_all.assert_any_call(
+            "<Control-z>", owner._on_undo_shortcut)
+        owner.bind_all.assert_any_call(
+            "<Control-y>", owner._on_redo_shortcut)
+        owner.bind_all.assert_any_call(
+            "<Control-Shift-Z>", owner._on_redo_shortcut)
 
 
 class PreviewPageTests(unittest.TestCase):
@@ -555,7 +570,7 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(editor.memory['history'].undo_count(), 1)
         self.assertEqual(editor.memory['undo_button'].options["state"], "normal")
 
-        editor.cmd_undo()
+        self.assertEqual(editor._on_undo_shortcut(), "break")
         self.assertEqual(editor.memory['archive'].modules(), [])
         self.assertFalse(editor.memory['dirty'])
         self.assertEqual(editor.memory['redo_button'].options["state"], "normal")
@@ -563,7 +578,7 @@ class HistoryTests(unittest.TestCase):
         # A no-op dirty mark must preserve the redo history.
         editor._mark_dirty()
         self.assertEqual(editor.memory['history'].redo_count(), 1)
-        editor.cmd_redo()
+        self.assertEqual(editor._on_redo_shortcut(), "break")
         self.assertEqual(len(editor.memory['archive'].modules()), 1)
         self.assertTrue(editor.memory['dirty'])
 
@@ -612,6 +627,29 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(editor.memory["preview_scroll"], 1.0)
         editor.cmd_undo()
         self.assertEqual(editor._preview_page_count(), 4)
+
+    def test_delete_shortcut_can_be_undone(self):
+        editor = self.editor()
+        item = ke.make_module("text")
+        editor.memory["archive"].modules().append(item)
+        editor._mark_dirty()
+        editor.memory["selected"] = item
+        editor.memory["tree"] = Mock()
+        editor.memory["tree"].selection.return_value = ("item-row",)
+        editor.memory["tree_map"] = {
+            "item-row": (item, editor.memory["archive"].modules()),
+        }
+
+        with patch(
+                "klwp.ui.document.messagebox.askyesno") as confirmation:
+            editor._on_delete_shortcut()
+
+        confirmation.assert_not_called()
+        self.assertEqual(editor.memory["archive"].modules(), [])
+        editor._on_undo_shortcut()
+        restored = editor.memory["archive"].modules()
+        self.assertEqual(len(restored), 1)
+        self.assertEqual(restored[0]["internal_type"], "TextModule")
 
 
 @unittest.skipUnless(ke.HAS_TK and ke.HAS_PIL, "Tkinter/Pillow required")
