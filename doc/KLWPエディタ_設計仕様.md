@@ -905,12 +905,16 @@ sequenceDiagram
 
 ### 3.7 図形・画像の直接リサイズ
 
-編集モードで選択したShapeまたはBitmapには8方向のハンドルを表示します。Shapeはドラッグした軸を個別に変更し、Bitmapはどのハンドルでも現在の縦横比を維持します。サイズ変更後は、ルート要素ならアンカー基準オフセット、レイヤー内の子要素なら四辺余白を補正し、ドラッグしていない反対側の縁を固定します。描画時に全モジュールの境界を記録するため、Overlap内の子要素も最前面から選択・リサイズできます。
+編集対象の選択元は左ペインの要素Treeviewだけです。プレビュー上でアイテムをクリックしても未選択状態から選択せず、別アイテムへも切り替えません。Treeviewで選択済みの要素内部をドラッグした場合だけ座標・余白を変更し、その要素のハンドルをドラッグした場合だけサイズを変更します。アイテムのない背景では拡大表示のパンへ移ります。
+
+編集モードで選択したShapeまたはBitmapには8方向のハンドルを表示します。Shapeはドラッグした軸を個別に変更し、Bitmapはどのハンドルでも現在の縦横比を維持します。サイズ変更後は、ルート要素ならアンカー基準オフセット、レイヤー内の子要素なら四辺余白を補正し、ドラッグしていない反対側の縁を固定します。描画時に全モジュールの境界を記録するため、Treeviewで選択したOverlap内の子要素も直接移動・リサイズできます。
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor User as 利用者
+    participant Tree as 要素Treeview
+    participant Memory as ApplicationMemory
     participant Canvas as CanvasRendererMixin
     participant Interaction as ResizeInteractionMixin
     participant Handles as ResizeHandleSet
@@ -919,9 +923,12 @@ sequenceDiagram
     participant Item as ShapeまたはBitmap
     participant History as HistoryTimeline
 
+    User->>Tree: 編集する要素を選択
+    Tree->>Memory: selectedを更新
     Canvas->>Handles: positions(selected_bounds)
     Handles-->>Canvas: 8方向のハンドル座標
     Canvas-->>User: 選択枠とハンドルを表示
+    Note over User,Canvas: Canvasクリックだけではselectedを変更しない
     User->>Interaction: 縁またはハンドルを押す
     Interaction->>Handles: hit(bounds, pointer, tolerance)
     Handles-->>Interaction: N・E・S・Wまたは四隅
@@ -1120,11 +1127,11 @@ sequenceDiagram
 
 | 分類 | キーの例 | 保存対象 |
 | --- | --- | --- |
-| ドキュメント | `archive`, `device_res`, `selected` | `archive` の内容だけ `.klwp` に保存 |
+| ドキュメント | `archive`, `device_res` | `archive` の内容だけ `.klwp` に保存 |
 | 履歴 | `history`, `dirty` | 保存しない |
 | UI | `tree`, `canvas`, `status`, 各ボタン | 保存しない |
 | キャッシュ | `photo_cache`, `font_cache`, `_photo`, `_quality_preview`, `_item_bounds` | 保存しない |
-| 編集操作 | `drag_state`, `resize_state`, `_view_pan_state`, `tree_drag` | 保存しない |
+| 編集操作 | `selected`, `drag_state`, `resize_state`, `_view_pan_state`, `tree_drag` | 保存しない |
 | プレビュー | `preview_scroll`, `preview_switches`, `preview_switch_progress`, `preview_values`, `preview_ts`, `preview_zoom`, `_view_origin` | 保存しない |
 | アニメーション | `_switch_transitions`, `_scroll_transition`, `_loop_started_at` | 保存しない |
 | イベント | `_event_regions`, `interaction_drag` | 保存しない |

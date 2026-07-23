@@ -245,16 +245,22 @@ class InteractionMixin(
         horizontal, vertical = self._document_point(event)
         if self._start_resize(horizontal, vertical):
             return
-        hit = self._hit_item(horizontal, vertical)
-        if hit is None:
-            self._start_preview_pan(event)
+        memory = self.memory
+        selected = memory.optional("selected")
+        if selected is None:
+            self._start_preview_pan_on_background(event, horizontal, vertical)
             return
-        self.memory['selected'] = hit
+        if not self._inside_item(selected, horizontal, vertical):
+            self._start_preview_pan_on_background(event, horizontal, vertical)
+            return
         self.memory['resize_state'] = None
         self.memory['drag_state'] = (horizontal, vertical)
-        self._rebuild_tree(select=hit)
-        self._render()
-        self._build_props()
+
+    def _start_preview_pan_on_background(
+            self, event, horizontal, vertical):
+        if self._hit_item(horizontal, vertical) is not None:
+            return
+        self._start_preview_pan(event)
 
     def _start_interaction_drag(self, event):
         self.memory['_scroll_transition'] = None

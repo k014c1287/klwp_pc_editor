@@ -473,6 +473,124 @@ class PreviewPanTests(unittest.TestCase):
         renderer.after.assert_not_called()
 
 
+class CanvasSelectionTests(unittest.TestCase):
+    def test_canvas_item_click_does_not_select_when_tree_is_unselected(self):
+        renderer = object.__new__(ke.EditorApp)
+        renderer.memory = ke.ApplicationMemory()
+        renderer.memory["selected"] = None
+        renderer.memory["resize_state"] = None
+        renderer.memory["drag_state"] = None
+        renderer.memory["_scale"] = 1.0
+        renderer.memory["_view_origin"] = (0.0, 0.0)
+        item = ke.make_module("shape")
+        renderer.memory["_item_bounds"] = [(item, (10.0, 10.0, 80.0, 80.0))]
+        renderer._start_preview_pan = Mock()
+        event = type("Event", (), {"x": 40.0, "y": 40.0})()
+
+        renderer._on_canvas_press(event)
+
+        self.assertIsNone(renderer.memory["selected"])
+        self.assertIsNone(renderer.memory["drag_state"])
+        renderer._start_preview_pan.assert_not_called()
+
+    def test_tree_selected_item_can_be_moved_on_canvas(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        selected = ke.make_module("shape")
+        archive.modules().append(selected)
+        renderer = object.__new__(ke.EditorApp)
+        renderer.memory = ke.ApplicationMemory()
+        renderer.memory["archive"] = archive
+        renderer.memory["photo_cache"] = {}
+        renderer.memory["font_cache"] = {}
+        renderer.memory["device_res"] = (1080, 2400)
+        renderer.render_to_image(360, 800)
+        renderer.memory["selected"] = selected
+        renderer.memory["resize_state"] = None
+        renderer.memory["drag_state"] = None
+        renderer.memory["_view_pan_state"] = None
+        renderer.memory["_view_origin"] = (0.0, 0.0)
+        initial_horizontal = selected["position_offset_x"]
+        initial_vertical = selected["position_offset_y"]
+        left, top, width, height = renderer._bounds(selected)
+        scale = renderer.memory["_scale"]
+        press = type("Event", (), {
+            "x": (left + width / 2.0) * scale,
+            "y": (top + height / 2.0) * scale,
+        })()
+        renderer._on_canvas_press(press)
+        renderer._render = Mock()
+        drag = type("Event", (), {
+            "x": press.x + 10.0 * scale,
+            "y": press.y + 20.0 * scale,
+        })()
+
+        renderer._on_canvas_drag(drag)
+
+        self.assertEqual(
+            selected["position_offset_x"], initial_horizontal + 10.0)
+        self.assertEqual(
+            selected["position_offset_y"], initial_vertical + 20.0)
+
+    def test_tree_selected_item_can_be_resized_on_canvas(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        selected = ke.make_module("shape")
+        archive.modules().append(selected)
+        renderer = object.__new__(ke.EditorApp)
+        renderer.memory = ke.ApplicationMemory()
+        renderer.memory["archive"] = archive
+        renderer.memory["photo_cache"] = {}
+        renderer.memory["font_cache"] = {}
+        renderer.memory["device_res"] = (1080, 2400)
+        renderer.render_to_image(360, 800)
+        renderer.memory["selected"] = selected
+        renderer.memory["resize_state"] = None
+        renderer.memory["drag_state"] = None
+        renderer.memory["_view_pan_state"] = None
+        renderer.memory["_view_origin"] = (0.0, 0.0)
+        initial_width = selected["shape_width"]
+        initial_height = selected["shape_height"]
+        left, top, width, height = renderer._bounds(selected)
+        scale = renderer.memory["_scale"]
+        press = type("Event", (), {
+            "x": (left + width) * scale,
+            "y": (top + height) * scale,
+        })()
+
+        renderer._on_canvas_press(press)
+        renderer._render = Mock()
+        drag = type("Event", (), {
+            "x": press.x + 10.0 * scale,
+            "y": press.y + 20.0 * scale,
+        })()
+        renderer._on_canvas_drag(drag)
+
+        self.assertEqual(selected["shape_width"], initial_width + 10.0)
+        self.assertEqual(selected["shape_height"], initial_height + 20.0)
+
+    def test_canvas_click_on_other_item_keeps_tree_selection(self):
+        renderer = object.__new__(ke.EditorApp)
+        renderer.memory = ke.ApplicationMemory()
+        selected = ke.make_module("shape")
+        other = ke.make_module("text")
+        renderer.memory["selected"] = selected
+        renderer.memory["drag_state"] = None
+        renderer.memory["_scale"] = 1.0
+        renderer.memory["_view_origin"] = (0.0, 0.0)
+        renderer.memory["_item_bounds"] = [(other, (10.0, 10.0, 80.0, 80.0))]
+        renderer._start_resize = Mock(return_value=False)
+        renderer._inside_item = Mock(return_value=False)
+        renderer._start_preview_pan = Mock()
+        event = type("Event", (), {"x": 40.0, "y": 40.0})()
+
+        renderer._on_canvas_press(event)
+
+        self.assertIs(renderer.memory["selected"], selected)
+        self.assertIsNone(renderer.memory["drag_state"])
+        renderer._start_preview_pan.assert_not_called()
+
+
 class ResizeTests(unittest.TestCase):
     def test_handle_hit_detection_includes_edges_and_corners(self):
         bounds = (100.0, 200.0, 300.0, 150.0)
