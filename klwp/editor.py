@@ -45,7 +45,12 @@ if HAS_TK:
         _TEXT_SPACING_U = 4.0
         PROP_FIELDS = [
             ("internal_title", "名前"), ("position_anchor", "アンカー"),
-            ("position_offset_x", "X"), ("position_offset_y", "Y"),
+            ("position_offset_x", "横オフセット"),
+            ("position_offset_y", "縦オフセット"),
+            ("position_padding_left", "左余白"),
+            ("position_padding_right", "右余白"),
+            ("position_padding_top", "上余白"),
+            ("position_padding_bottom", "下余白"),
             ("shape_type", "図形種別"), ("shape_width", "幅"),
             ("shape_height", "高さ"), ("shape_corners", "角丸"),
             ("shape_offset", "扇形・弧の角度"),

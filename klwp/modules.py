@@ -4,7 +4,7 @@ from .runtime import *  # noqa: F401,F403
 from .formula import sample_eval
 
 
-DEFAULT_ANCHOR = "TOP"
+DEFAULT_ANCHOR = "CENTER"
 
 # ----------------------------------------------------------------------------
 # 新規要素テンプレート

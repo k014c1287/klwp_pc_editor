@@ -1,6 +1,7 @@
 """Handle preview animation, taps, swipes and canvas dragging."""
 
 from ..shared import *  # noqa: F401,F403
+from ..positioning import PositionMutation
 from .resize_interaction import ResizeInteractionMixin
 
 
@@ -216,11 +217,7 @@ class InteractionMixin(PreviewInteractionMixin, ResizeInteractionMixin):
             return
         self.memory['selected'] = hit
         self.memory['resize_state'] = None
-        self.memory['drag_state'] = (
-            horizontal, vertical,
-            float(hit.get("position_offset_x", 0) or 0),
-            float(hit.get("position_offset_y", 0) or 0),
-        )
+        self.memory['drag_state'] = (horizontal, vertical)
         self._rebuild_tree(select=hit)
         self._render()
         self._build_props()
@@ -290,33 +287,20 @@ class InteractionMixin(PreviewInteractionMixin, ResizeInteractionMixin):
 
     def _drag_selected_item(self, event):
         scale = self.memory['_scale']
-        initial_horizontal, initial_vertical, offset_horizontal, offset_vertical = \
-            self.memory['drag_state']
+        initial_horizontal, initial_vertical = self.memory['drag_state']
         difference_horizontal = event.x / scale - initial_horizontal
         difference_vertical = event.y / scale - initial_vertical
-        anchor = self.memory['selected'].get("position_anchor") or DEFAULT_ANCHOR
-        horizontal_sign = self._horizontal_drag_sign(anchor)
-        vertical_sign = self._vertical_drag_sign(anchor)
         selected = self.memory['selected']
-        selected["position_offset_x"] = round(
-            offset_horizontal + horizontal_sign * difference_horizontal, 1)
-        selected["position_offset_y"] = round(
-            offset_vertical + vertical_sign * difference_vertical, 1)
+        mutation = self._position_mutation(selected)
+        mutation.move_by(difference_horizontal, difference_vertical)
+        self.memory['drag_state'] = (event.x / scale, event.y / scale)
         self._render()
 
-    @staticmethod
-    def _horizontal_drag_sign(anchor):
-        if anchor in ("TOPRIGHT", "CENTERRIGHT", "BOTTOMRIGHT"):
-            return -1
-        return 1
-
-    @staticmethod
-    def _vertical_drag_sign(anchor):
-        if anchor in (
-                "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT",
-                "CENTER", "CENTERLEFT", "CENTERRIGHT"):
-            return -1
-        return 1
+    def _position_mutation(self, item):
+        archive = self.memory['archive']
+        root_items = archive.modules()
+        is_root = any(map(lambda root: root is item, root_items))
+        return PositionMutation(item, is_root)
 
     def _on_canvas_release(self, event):
         if self._interaction_enabled() and self.memory['interaction_drag']:

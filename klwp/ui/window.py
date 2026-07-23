@@ -71,13 +71,12 @@ class EditorWindowBuilder:
         owner.bind_all("<Control-z>", owner._on_undo_shortcut)
         owner.bind_all("<Control-y>", owner._on_redo_shortcut)
         owner.bind_all("<Control-Shift-Z>", owner._on_redo_shortcut)
+        owner.bind("<Escape>", owner._on_clear_selection_shortcut)
 
     def _module_tree(self, body):
         owner = self._owner
         frame = ttk.Frame(body)
-        ttk.Label(
-            frame, text="要素（下ほど前面）  ドラッグで順序変更",
-            padding=(6, 5)).pack(fill="x")
+        self._module_tree_header(frame)
         tree = ttk.Treeview(
             frame, columns=("kind", "priority"),
             show="tree headings", selectmode="browse")
@@ -89,6 +88,18 @@ class EditorWindowBuilder:
         tree.bind("<ButtonRelease-1>", owner._on_tree_release, add="+")
         owner.memory['tree'] = tree
         body.add(frame, weight=1)
+
+    def _module_tree_header(self, frame):
+        owner = self._owner
+        header = ttk.Frame(frame, padding=(6, 5))
+        header.pack(fill="x")
+        ttk.Label(
+            header, text="要素（下ほど前面）  ドラッグで順序変更"
+        ).pack(side="left")
+        ttk.Button(
+            header, text="選択解除（ルート）",
+            command=owner.cmd_clear_selection
+        ).pack(side="right")
 
     @staticmethod
     def _configure_module_tree(tree):

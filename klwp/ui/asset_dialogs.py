@@ -1,6 +1,7 @@
 """Background and bitmap-management dialogs."""
 
 from ..shared import *  # noqa: F401,F403
+from ..background import BackgroundImageBinding, BitmapGlobalCollection
 
 
 class BackgroundDialog:
@@ -12,15 +13,20 @@ class BackgroundDialog:
         owner = self._owner
         memory = owner.memory
         archive = memory['archive']
-        self._widgets['root'] = archive.root_module()
+        root_module = archive.root_module()
+        self._widgets['root'] = root_module
+        self._widgets['binding'] = BackgroundImageBinding(root_module)
+        self._widgets['globals'] = BitmapGlobalCollection(root_module)
         window = tk.Toplevel(self._owner)
         window.title("背景設定")
+        window.geometry("620x470")
         window.grab_set()
         self._widgets['window'] = window
         mode = tk.StringVar(
-            value=self._widgets['root'].get("background_type", "SOLID"))
+            value=root_module.get("background_type", "SOLID"))
         self._widgets['mode'] = mode
         self._radio_buttons(window, mode)
+        self._dynamic_image_fields(window)
         self._buttons(window)
 
     @staticmethod
@@ -36,17 +42,57 @@ class BackgroundDialog:
         ttk.Button(window, text="色を選ぶ", command=self._pick_color).pack(
             fill="x", padx=10, pady=4)
         ttk.Button(
-            window, text="画像ファイルを選ぶ", command=self._pick_image).pack(
+            window, text="固定画像ファイルを選ぶ", command=self._pick_image).pack(
                 fill="x", padx=10, pady=4)
         ttk.Button(
             window, text="適用して閉じる", command=self._apply).pack(
-                fill="x", padx=10, pady=8)
+            fill="x", padx=10, pady=8)
+
+    def _dynamic_image_fields(self, window):
+        frame = ttk.LabelFrame(window, text="Global・数式による背景画像", padding=8)
+        frame.pack(fill="both", expand=True, padx=10, pady=8)
+        binding = self._widgets['binding']
+        formula, global_name = binding.form_values()
+        self._global_selector(frame, global_name)
+        ttk.Label(frame, text="背景画像の数式").pack(anchor="w", pady=(8, 2))
+        text = tk.Text(frame, height=7, wrap="word", font=("Consolas", 9))
+        text.insert("1.0", formula)
+        text.pack(fill="both", expand=True)
+        self._widgets['formula'] = text
+        ttk.Label(
+            frame,
+            text="例: $if(df(H)>19, gv(night), gv(day))$\n"
+                 "日時の確認はツールバーの「プレビュー値」から変更できます。",
+            foreground="#666").pack(anchor="w", pady=(5, 0))
+
+    def _global_selector(self, frame, global_name):
+        ttk.Label(frame, text="背景画像Global（数式未指定時、または式の予備値）").pack(
+            anchor="w")
+        collection = self._widgets['globals']
+        choices = self._global_choices(collection.names(), global_name)
+        variable = tk.StringVar(value=global_name)
+        selector = ttk.Combobox(
+            frame, textvariable=variable, values=choices, state="readonly")
+        selector.pack(fill="x", pady=3)
+        self._widgets['global_variable'] = variable
+        self._widgets['global_selector'] = selector
+        ttk.Button(
+            frame, text="画像ファイルを背景用Globalとして追加",
+            command=self._pick_global_image).pack(fill="x", pady=3)
+
+    @staticmethod
+    def _global_choices(names, current):
+        values = tuple(names)
+        if current and current not in values:
+            values += (current,)
+        return ("",) + values
 
     def _pick_color(self):
         color = colorchooser.askcolor(parent=self._widgets['window'])[1]
         if not color:
             return
         self._widgets['root']["background_color"] = "#FF" + color[1:].upper()
+        self._widgets['mode'].set("SOLID")
         self._apply()
 
     def _pick_image(self):
@@ -60,16 +106,64 @@ class BackgroundDialog:
         archive = memory['archive']
         self._widgets['root']["background_bitmap"] = archive.add_bitmap(path)
         self._widgets['root']["background_type"] = "IMAGE"
+        self._widgets['mode'].set("IMAGE")
+        self._clear_dynamic_binding()
         self._apply()
 
+    def _pick_global_image(self):
+        path = filedialog.askopenfilename(
+            parent=self._widgets['window'],
+            filetypes=[("画像", "*.png *.jpg *.jpeg *.webp"), ("All", "*.*")])
+        if not path:
+            return
+        name = simpledialog.askstring(
+            APP_TITLE, "Globalの識別名:", parent=self._widgets['window'])
+        if not self._valid_global_name(name):
+            self._error("識別名には空白・$・括弧・カンマを使用できません。")
+            return
+        collection = self._widgets['globals']
+        if collection.contains(name):
+            self._error("同じ識別名が既にあります。")
+            return
+        self._add_global_image(collection, name, path)
+
+    def _add_global_image(self, collection, name, path):
+        owner = self._owner
+        memory = owner.memory
+        archive = memory['archive']
+        reference = archive.add_bitmap(path)
+        collection.add(name, reference)
+        choices = self._global_choices(collection.names(), name)
+        self._widgets['global_selector'].configure(values=choices)
+        self._widgets['global_variable'].set(name)
+        self._widgets['mode'].set("IMAGE")
+        owner._mark_dirty()
+
+    def _clear_dynamic_binding(self):
+        self._widgets['global_variable'].set("")
+        text = self._widgets['formula']
+        text.delete("1.0", "end")
+
+    @staticmethod
+    def _valid_global_name(name):
+        return bool(name) and re.search(r"[\s$(),]", name) is None
+
     def _apply(self):
-        self._widgets['root']["background_type"] = self._widgets['mode'].get()
+        widgets = self._widgets
+        widgets['root']["background_type"] = widgets['mode'].get()
+        formula = widgets['formula'].get("1.0", "end-1c").strip()
+        global_name = widgets['global_variable'].get().strip()
+        widgets['binding'].apply(formula, global_name)
         owner = self._owner
         memory = owner.memory
         owner._mark_dirty()
         memory['photo_cache'].clear()
         owner._render()
-        self._widgets['window'].destroy()
+        widgets['window'].destroy()
+
+    def _error(self, message):
+        messagebox.showerror(
+            APP_TITLE, message, parent=self._widgets['window'])
 
 
 class ImageManagerDialog:

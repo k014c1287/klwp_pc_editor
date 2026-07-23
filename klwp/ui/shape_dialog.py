@@ -109,6 +109,7 @@ class ShapeDialog:
         owner = self._owner
         memory = owner.memory
         target = owner._target_list()
+        owner._prepare_item_position(item, target)
         target.append(item)
         memory['selected'] = item
         owner._mark_dirty()

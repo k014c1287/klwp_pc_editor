@@ -129,7 +129,7 @@ class CanvasRendererMixin:
         return default
 
     def _bitmap_image(self, reference):
-        if not reference:
+        if not isinstance(reference, str) or not reference:
             return None
         name = "bitmaps/" + reference.split("/")[-1]
         data = self.memory['archive']['bitmaps'].get(name)

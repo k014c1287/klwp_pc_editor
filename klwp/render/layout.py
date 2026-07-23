@@ -156,36 +156,21 @@ class LayoutMixin:
 
     def _expand_layer_extent(self, extent, child, global_values):
         width, height = self._item_size(child, global_values)
-        anchor = str(child.get("position_anchor") or DEFAULT_ANCHOR)
-        horizontal = self._padding_difference(child, "left", "right", global_values)
-        vertical = self._padding_difference(child, "top", "bottom", global_values)
-        required_width = self._required_horizontal(anchor, width, horizontal)
-        required_height = self._required_vertical(anchor, height, vertical)
+        horizontal = self._padding_total(
+            child, "left", "right", global_values)
+        vertical = self._padding_total(
+            child, "top", "bottom", global_values)
+        required_width = width + horizontal
+        required_height = height + vertical
         extent["width"] = max(extent["width"], required_width)
         extent["height"] = max(extent["height"], required_height)
 
-    def _padding_difference(self, item, first, second, global_values):
+    def _padding_total(self, item, first, second, global_values):
         first_value = self._number(
             item, f"position_padding_{first}", 0.0, global_values)
         second_value = self._number(
             item, f"position_padding_{second}", 0.0, global_values)
-        return first_value - second_value
-
-    @staticmethod
-    def _required_horizontal(anchor, width, difference):
-        if anchor in ("TOPLEFT", "CENTERLEFT", "BOTTOMLEFT"):
-            return width + max(0.0, difference)
-        if anchor in ("TOPRIGHT", "CENTERRIGHT", "BOTTOMRIGHT"):
-            return width + max(0.0, -difference)
-        return width + abs(difference)
-
-    @staticmethod
-    def _required_vertical(anchor, height, difference):
-        if anchor in ("TOPLEFT", "TOP", "TOPRIGHT"):
-            return height + max(0.0, difference)
-        if anchor in ("BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT"):
-            return height + max(0.0, -difference)
-        return height + abs(difference)
+        return max(0.0, first_value + second_value)
 
     def _bounds(self, item):
         archive = self.memory['archive']

@@ -92,6 +92,10 @@ classDiagram
         +apply(horizontal, vertical)
         +changed()
     }
+    class PositionMutation {
+        -_values
+        +move_by(horizontal, vertical)
+    }
     class SettingsMixin
     class PropertyPanelMixin
     class PreviewValuesMixin
@@ -136,6 +140,9 @@ classDiagram
     ResizeInteractionMixin <|-- InteractionMixin
     ResizeInteractionMixin ..> ResizeHandleSet
     ResizeInteractionMixin ..> ResizeSession
+    InteractionMixin ..> PositionMutation : drag
+    ResizeInteractionMixin ..> PositionMutation : preserve opposite edge
+    DocumentMixin ..> PositionMutation : duplicate shift
     CanvasRendererMixin ..> ResizeHandleSet : selection handles
 
     EditorApp *-- ApplicationMemory : memory
@@ -245,7 +252,7 @@ classDiagram
 
 ### 2.3 描画パイプライン
 
-`CanvasRendererMixin` が描画全体を開始し、`CompositorMixin` がモジュールツリーを再帰的に合成します。値解決、アニメーション、配置計算を行った後、モジュール種別ごとのレンダラーへ振り分けます。ルート配置のYオフセットはTOP系で増加が下方向、CENTER/BOTTOM系で増加が上方向です。アンカー未指定時は配置・ドラッグ・リサイズともにTOP（上）として扱います。
+`CanvasRendererMixin` が描画全体を開始し、`CompositorMixin` がモジュールツリーを再帰的に合成します。値解決、アニメーション、配置計算を行った後、モジュール種別ごとのレンダラーへ振り分けます。ルート要素の `position_offset_x/y` はアンカーからの距離であり、左上からの絶対座標ではありません。Overlap/Stack内の子要素は四辺の `position_padding_*` を余白として配置し、端アンカーは対応する辺、中央系アンカーは両側余白の差の半分を使用します。アンカー未指定時はCENTER（中央）として扱います。
 
 ```mermaid
 classDiagram
@@ -526,6 +533,15 @@ classDiagram
     class BackgroundDialog {
         +show()
     }
+    class BackgroundImageBinding {
+        +form_values()
+        +apply(formula, global_name)
+    }
+    class BitmapGlobalCollection {
+        +names()
+        +add(name, reference)
+        +contains(name)
+    }
     class ImageManagerDialog {
         +show()
     }
@@ -571,6 +587,8 @@ classDiagram
     EditorApp ..> JsonEditorDialog : raw JSON edit
     EditorApp ..> ShapeDialog : add shape
     EditorApp ..> BackgroundDialog : background
+    BackgroundDialog ..> BackgroundImageBinding : formula and Global link
+    BackgroundDialog ..> BitmapGlobalCollection : BITMAP Globals
     EditorApp ..> ImageManagerDialog : bitmap assets
     EditorApp ..> GlobalManagerDialog : all globals
     GlobalManagerDialog ..> GlobalEntryDialog : add or edit
@@ -840,7 +858,7 @@ sequenceDiagram
 
 ### 3.7 図形・画像の直接リサイズ
 
-編集モードで選択したShapeまたはBitmapには8方向のハンドルを表示します。Shapeはドラッグした軸を個別に変更し、Bitmapはどのハンドルでも現在の縦横比を維持します。サイズ変更後はアンカーに応じてオフセットを補正し、ドラッグしていない反対側の縁を固定します。描画時に全モジュールの境界を記録するため、Overlap内の子要素も最前面から選択・リサイズできます。
+編集モードで選択したShapeまたはBitmapには8方向のハンドルを表示します。Shapeはドラッグした軸を個別に変更し、Bitmapはどのハンドルでも現在の縦横比を維持します。サイズ変更後は、ルート要素ならアンカー基準オフセット、レイヤー内の子要素なら四辺余白を補正し、ドラッグしていない反対側の縁を固定します。描画時に全モジュールの境界を記録するため、Overlap内の子要素も最前面から選択・リサイズできます。
 
 ```mermaid
 sequenceDiagram
@@ -850,6 +868,7 @@ sequenceDiagram
     participant Interaction as ResizeInteractionMixin
     participant Handles as ResizeHandleSet
     participant Session as ResizeSession
+    participant Position as PositionMutation
     participant Item as ShapeまたはBitmap
     participant History as HistoryTimeline
 
@@ -868,7 +887,12 @@ sequenceDiagram
         else BitmapModule
             Session->>Item: 比率を固定してbitmap_widthだけ更新
         end
-        Interaction->>Item: アンカーに応じて位置オフセットを補正
+        Interaction->>Position: move_by(反対側の縁との差分)
+        alt ルート要素
+            Position->>Item: アンカー基準オフセットを補正
+        else レイヤー内の子要素
+            Position->>Item: 四辺余白を補正
+        end
         Interaction->>Canvas: _render()
         Canvas-->>User: サイズ変更へ追従
     end
@@ -913,6 +937,8 @@ sequenceDiagram
 
 ツリーはKLWPの配列順と同じく上から背面、下ほど前面として表示します。ドラッグ元とドロップ先が同じ兄弟コレクションに属する場合だけ、対象行の前または後へ移動します。別レイヤーへのドロップは階層構造を変えてしまうため受け付けません。変更はドロップ時に一度だけ履歴へ記録され、Undo/Redoできます。
 
+子要素を持つレイヤーが選択中の場合、新規要素の追加先はそのレイヤーです。「選択解除（ルート）」ボタン、ツリーの空白クリック、またはEscキーで選択を解除すると、`selected` とTreeviewの選択を同時に消去し、以降の追加先をルートの `modules` へ戻します。選択解除自体は成果物を変更しないため履歴には記録しません。
+
 ```mermaid
 sequenceDiagram
     autonumber
@@ -940,6 +966,48 @@ sequenceDiagram
     Drag->>History: record(snapshot)
     Drag->>Preview: _refresh_all(select=source)
     Preview-->>User: 新しい重なり順を描画
+```
+
+### 3.10 数式・BITMAP Globalによる背景切替
+
+背景設定は固定画像に加え、`internal_globals.background_bitmap` のBITMAP型Globalリンクと、`internal_formulas.background_bitmap` のKode数式を編集します。数式がある場合は数式、次にGlobalリンク、最後に固定の `background_bitmap` という通常の値解決優先順位を使用します。プレビュー値で日時を変更すると `df(H)` などが再評価され、Globalに保存されたアーカイブ内画像パスから背景を再描画します。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Dialog as BackgroundDialog
+    participant Binding as BackgroundImageBinding
+    participant Globals as BitmapGlobalCollection
+    participant Archive as KlwpArchive
+    participant Preview as PreviewValuesDialog
+    participant Canvas as CanvasRendererMixin
+    participant Resolver as ModuleValueResolver
+    participant Formula as FormulaFunctions
+
+    User->>Dialog: 背景設定を開く
+    Dialog->>Binding: form_values()
+    Binding-->>Dialog: 背景数式とGlobalリンク
+    Dialog->>Globals: names()
+    Globals-->>Dialog: BITMAP型Global一覧
+    opt 背景用画像Globalを追加
+        User->>Dialog: 画像ファイルと識別名を指定
+        Dialog->>Archive: add_bitmap(path)
+        Archive-->>Dialog: kfile参照
+        Dialog->>Globals: add(name, reference)
+    end
+    User->>Dialog: 数式・Globalリンクを適用
+    Dialog->>Binding: apply(formula, global_name)
+    User->>Preview: プレビュー日時を変更
+    Preview->>Canvas: 再描画
+    Canvas->>Resolver: resolve(root, background_bitmap)
+    Resolver->>Formula: eval background formula
+    Formula->>Globals: gv(name)のvalueを解決
+    Globals-->>Formula: kfile画像パス
+    Formula-->>Resolver: 時間帯に対応する画像パス
+    Resolver-->>Canvas: background_bitmap参照
+    Canvas->>Archive: bitmaps/IMG...を読み込み
+    Canvas-->>User: 切替後の背景を表示
 ```
 
 ## 4. 状態とデータの境界

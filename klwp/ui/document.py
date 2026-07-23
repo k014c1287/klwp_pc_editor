@@ -1,6 +1,7 @@
 """Document lifecycle, history commands and module-list operations."""
 
 from ..shared import *  # noqa: F401,F403
+from ..positioning import PositionMutation
 from .asset_dialogs import BackgroundDialog, ImageManagerDialog
 from .shape_dialog import ShapeDialog
 from .tree import ModuleTreeBuilder
@@ -182,10 +183,19 @@ class DocumentMixin(DocumentLifecycleMixin):
 
     def cmd_add(self, kind):
         item = make_module(kind)
-        self._target_list().append(item)
+        target = self._target_list()
+        self._prepare_item_position(item, target)
+        target.append(item)
         self.memory['selected'] = item
         self._mark_dirty()
         self._refresh_all(select=item)
+
+    def _prepare_item_position(self, item, target):
+        archive = self.memory['archive']
+        if target is archive.modules():
+            return
+        item.pop("position_offset_x", None)
+        item.pop("position_offset_y", None)
 
     def cmd_add_shape(self):
         ShapeDialog(self).show()
@@ -197,8 +207,9 @@ class DocumentMixin(DocumentLifecycleMixin):
         item, parent = self.memory['tree_map'][identifier]
         clone = copy.deepcopy(item)
         clone["internal_title"] = (item.get("internal_title") or "") + " copy"
-        clone["position_offset_x"] = float(item.get("position_offset_x", 0)) + 30
-        clone["position_offset_y"] = float(item.get("position_offset_y", 0)) + 30
+        archive = self.memory['archive']
+        mutation = PositionMutation(clone, parent is archive.modules())
+        mutation.move_by(30.0, 30.0)
         parent.insert(parent.index(item) + 1, clone)
         self.memory['selected'] = clone
         self._mark_dirty()
@@ -250,6 +261,24 @@ class DocumentMixin(DocumentLifecycleMixin):
         if not selection:
             return None
         return selection[0]
+
+    def cmd_clear_selection(self):
+        memory = self.memory
+        tree = memory['tree']
+        selection = tree.selection()
+        if selection:
+            tree.selection_remove(*selection)
+        memory['selected'] = None
+        memory['drag_state'] = None
+        memory['resize_state'] = None
+        self._render()
+        self._build_props()
+        memory['status'].config(
+            text="選択を解除しました。次の要素はルートへ追加されます")
+
+    def _on_clear_selection_shortcut(self, _event=None):
+        self.cmd_clear_selection()
+        return "break"
 
     def _on_tree_select(self, _event):
         identifier = self._selected_iid()

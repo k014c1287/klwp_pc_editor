@@ -3,23 +3,31 @@ import io
 import json
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 import klwp_editor as ke
-from klwp.ui.property_panel import AnchorChoices
+from klwp.ui.property_panel import AnchorChoices, PropertyPanelBuilder
 from klwp.ui.color_control import KlwpColor
 from klwp.resize import ResizeHandleSet, ResizeSession
+from klwp.positioning import PositionMutation
+from klwp.background import BackgroundImageBinding, BitmapGlobalCollection
 from klwp.ui.global_dialog import GlobalEntryValues
 from klwp.ui.setting_values import TouchActionValues
+from klwp.ui.document import DocumentMixin
 from klwp.adb import AdbDevices, AdbTransfer
 from klwp.ui.tree import ModuleTreePresentation
-from klwp.ui.tree_drag import TreeReorder
+from klwp.ui.tree_drag import TreeDragMixin, TreeReorder
 
 
 ROOT = Path(__file__).resolve().parent
 SAMPLES = ROOT / "sample"
+
+
+class _TreeEditor(DocumentMixin, TreeDragMixin):
+    pass
 
 
 class FormulaTests(unittest.TestCase):
@@ -105,8 +113,26 @@ class PropertyPanelTests(unittest.TestCase):
         self.assertEqual(
             tuple(map(AnchorChoices.to_display, expected_values)),
             expected_labels)
-        self.assertEqual(AnchorChoices.to_display(None), "上")
-        self.assertEqual(AnchorChoices.to_internal(""), "TOP")
+        self.assertEqual(AnchorChoices.to_display(None), "中央")
+        self.assertEqual(AnchorChoices.to_internal(""), "CENTER")
+
+    def test_position_fields_follow_root_and_nested_contexts(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        root_item = ke.make_module("layer")
+        nested_item = ke.make_module("shape")
+        root_item["viewgroup_items"].append(nested_item)
+        archive.modules().append(root_item)
+        owner = type("Owner", (), {"memory": {"archive": archive}})()
+        root_builder = PropertyPanelBuilder(owner, root_item)
+        nested_builder = PropertyPanelBuilder(owner, nested_item)
+
+        self.assertTrue(root_builder._position_field_is_visible(
+            "position_offset_x"))
+        self.assertFalse(nested_builder._position_field_is_visible(
+            "position_offset_x"))
+        self.assertTrue(nested_builder._position_field_is_visible(
+            "position_padding_left"))
 
     def test_visual_color_value_preserves_rgb_and_opacity(self):
         color = KlwpColor("#80aabbcc")
@@ -180,6 +206,35 @@ class ModuleTreeTests(unittest.TestCase):
         self.assertEqual(ModuleTreePresentation.priority(2, 3), "1・最前面")
         self.assertEqual(ModuleTreePresentation.tags(hidden), ("hidden",))
 
+    def test_clearing_layer_selection_restores_root_add_target(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        layer = ke.make_module("layer")
+        archive.modules().append(layer)
+        tree = Mock()
+        tree.selection.side_effect = [("layer-row",), ()]
+        tree.identify_row.return_value = ""
+        editor = _TreeEditor()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory['archive'] = archive
+        editor.memory['tree'] = tree
+        editor.memory['tree_map'] = {}
+        editor.memory['selected'] = layer
+        editor.memory['drag_state'] = object()
+        editor.memory['resize_state'] = object()
+        editor.memory['status'] = Mock()
+        editor._render = Mock()
+        editor._build_props = Mock()
+
+        result = editor._on_tree_press(
+            type("Event", (), {"y": 500})())
+
+        self.assertEqual(result, "break")
+        self.assertIsNone(editor.memory['tree_drag'])
+        tree.selection_remove.assert_called_once_with("layer-row")
+        self.assertIsNone(editor.memory['selected'])
+        self.assertIs(editor._target_list(), archive.modules())
+
 
 class ResizeTests(unittest.TestCase):
     def test_handle_hit_detection_includes_edges_and_corners(self):
@@ -215,6 +270,62 @@ class ResizeTests(unittest.TestCase):
         self.assertEqual(width / height, 2.0)
         self.assertEqual(item["bitmap_width"], 300.0)
         self.assertNotIn("bitmap_height", item)
+
+
+class PositioningTests(unittest.TestCase):
+    def test_root_movement_changes_anchor_relative_offsets(self):
+        item = {
+            "position_anchor": "BOTTOMRIGHT",
+            "position_offset_x": 20.0, "position_offset_y": 30.0,
+        }
+
+        PositionMutation(item, True).move_by(15.0, 25.0)
+
+        self.assertEqual(item["position_offset_x"], 5.0)
+        self.assertEqual(item["position_offset_y"], 5.0)
+        self.assertNotIn("position_padding_left", item)
+
+    def test_nested_movement_changes_margins_instead_of_offsets(self):
+        item = {"position_anchor": "CENTER"}
+
+        PositionMutation(item, False).move_by(15.0, -25.0)
+
+        self.assertEqual(item["position_padding_left"], 15.0)
+        self.assertEqual(item["position_padding_right"], -15.0)
+        self.assertEqual(item["position_padding_top"], -25.0)
+        self.assertEqual(item["position_padding_bottom"], 25.0)
+        self.assertNotIn("position_offset_x", item)
+
+
+class BackgroundTests(unittest.TestCase):
+    def test_binding_updates_background_fields_without_losing_other_formulas(self):
+        root_module = {
+            "internal_formulas": {"background_color": "$gv(color)$"},
+            "internal_globals": {"background_color": "color"},
+        }
+        binding = BackgroundImageBinding(root_module)
+
+        binding.apply("$gv(day)$", "day")
+
+        self.assertEqual(binding.form_values(), ("$gv(day)$", "day"))
+        self.assertEqual(
+            root_module["internal_formulas"]["background_color"], "$gv(color)$")
+        binding.apply("", "")
+        self.assertNotIn("background_bitmap", root_module["internal_formulas"])
+        self.assertNotIn("background_bitmap", root_module["internal_globals"])
+
+    def test_bitmap_global_collection_adds_archive_references(self):
+        root_module = {"globals_list": {
+            "caption": {"index": 1, "type": "TEXT", "value": "hello"},
+        }}
+        globals_collection = BitmapGlobalCollection(root_module)
+
+        globals_collection.add("day", "kfile://provider/bitmaps/IMGday")
+        globals_collection.add("night", "kfile://provider/bitmaps/IMGnight")
+
+        self.assertEqual(globals_collection.names(), ("day", "night"))
+        self.assertEqual(
+            root_module["globals_list"]["night"]["type"], "BITMAP")
 
 
 class ArchiveTests(unittest.TestCase):
@@ -463,13 +574,34 @@ class RenderTests(unittest.TestCase):
              for item in page_groups],
             [0.5, 0.5, 0.0])
 
-    def test_missing_anchor_uses_top_and_drag_tracks_pointer(self):
+    def test_formula_backed_bitmap_global_switches_background_by_hour(self):
+        archive = ke.KlwpArchive()
+        archive.load(SAMPLES / "sizuka_home.klwp")
+        renderer = self.renderer(archive)
+        root_module = archive.root_module()
+        references = []
+        images = []
+        for hour in (2, 8):
+            timestamp = datetime(2026, 7, 22, hour).timestamp() * 1000
+            renderer.memory["preview_ts"] = timestamp
+            global_values = renderer._root_globals()
+            reference = renderer._value(
+                root_module, "background_bitmap", "", global_values)
+            references.append(reference)
+            images.append(renderer.render_to_image(72, 160).tobytes())
+
+        self.assertNotEqual(references[0], references[1])
+        self.assertIsNotNone(renderer._bitmap_image(references[0]))
+        self.assertIsNotNone(renderer._bitmap_image(references[1]))
+        self.assertNotEqual(images[0], images[1])
+
+    def test_missing_anchor_uses_center_and_drag_tracks_pointer(self):
         archive = ke.KlwpArchive()
         archive.new()
         selected = ke.make_module("shape")
         selected.pop("position_anchor", None)
         selected["position_offset_x"] = 100.0
-        selected["position_offset_y"] = 900.0
+        selected["position_offset_y"] = 100.0
         archive.modules().append(selected)
         renderer = self.renderer(archive)
         renderer.render_to_image(360, 800)
@@ -477,19 +609,82 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("position_anchor", selected)
 
         initial_top = renderer._bounds(selected)[1]
-        self.assertAlmostEqual(initial_top, 900.0)
+        self.assertAlmostEqual(initial_top, 650.0)
         scale = renderer.memory["_scale"]
-        renderer.memory["drag_state"] = (
-            100.0, 1000.0, selected["position_offset_x"],
-            selected["position_offset_y"])
+        renderer.memory["drag_state"] = (100.0, 600.0)
         renderer._render = lambda: None
         event = type("Event", (), {
-            "x": 100.0 * scale, "y": 950.0 * scale,
+            "x": 100.0 * scale, "y": 550.0 * scale,
         })()
         renderer._drag_selected_item(event)
 
-        self.assertEqual(selected["position_offset_y"], 850.0)
+        self.assertEqual(selected["position_offset_y"], 150.0)
         self.assertAlmostEqual(renderer._bounds(selected)[1], initial_top - 50.0)
+
+    def test_anchor_margins_are_measured_from_the_selected_edges(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        renderer = self.renderer(archive)
+        item = ke.make_module("shape")
+        item.update({
+            "shape_width": 100.0, "shape_height": 50.0,
+            "position_padding_left": 20.0,
+            "position_padding_right": 80.0,
+            "position_padding_top": 30.0,
+            "position_padding_bottom": 90.0,
+        })
+        box = (0.0, 0.0, 500.0, 400.0)
+
+        item["position_anchor"] = "TOPLEFT"
+        self.assertEqual(
+            renderer._place(item, box, 100.0, 50.0), (20.0, 30.0))
+        item["position_anchor"] = "BOTTOMRIGHT"
+        self.assertEqual(
+            renderer._place(item, box, 100.0, 50.0), (320.0, 260.0))
+        item["position_anchor"] = "CENTER"
+        self.assertEqual(
+            renderer._place(item, box, 100.0, 50.0), (170.0, 145.0))
+
+    def test_nested_drag_updates_margins_without_creating_offsets(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        parent = ke.make_module("layer")
+        parent["position_offset_x"] = 0.0
+        parent["position_offset_y"] = 0.0
+        background = ke.make_module("shape")
+        background["shape_width"] = 400.0
+        background["shape_height"] = 300.0
+        selected = ke.make_module("shape")
+        selected["shape_width"] = 100.0
+        selected["shape_height"] = 50.0
+        selected["position_anchor"] = "CENTER"
+        for child in (background, selected):
+            child.pop("position_offset_x", None)
+            child.pop("position_offset_y", None)
+        parent["viewgroup_items"] = [background, selected]
+        archive.modules().append(parent)
+        renderer = self.renderer(archive)
+        renderer.render_to_image(360, 800)
+        initial_left, initial_top, _width, _height = renderer._bounds(selected)
+        renderer.memory["selected"] = selected
+        renderer.memory["drag_state"] = (0.0, 0.0)
+        scale = renderer.memory["_scale"]
+        renderer._render = lambda: None
+        event = type("Event", (), {
+            "x": 30.0 * scale, "y": 40.0 * scale,
+        })()
+
+        renderer._drag_selected_item(event)
+        renderer.render_to_image(360, 800)
+        moved_left, moved_top, _width, _height = renderer._bounds(selected)
+
+        self.assertNotIn("position_offset_x", selected)
+        self.assertEqual(selected["position_padding_left"], 30.0)
+        self.assertEqual(selected["position_padding_right"], -30.0)
+        self.assertEqual(selected["position_padding_top"], 40.0)
+        self.assertEqual(selected["position_padding_bottom"], -40.0)
+        self.assertAlmostEqual(moved_left, initial_left + 30.0)
+        self.assertAlmostEqual(moved_top, initial_top + 40.0)
 
     def test_scroll_and_switch_move_in_sample_directions(self):
         archive = ke.KlwpArchive()

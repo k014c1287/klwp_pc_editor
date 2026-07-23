@@ -8,6 +8,8 @@ class PropertyPanelMixin:
     INVALID = object()
     NUMERIC_PROPERTIES = {
         "position_offset_x", "position_offset_y",
+        "position_padding_left", "position_padding_right",
+        "position_padding_top", "position_padding_bottom",
         "shape_width", "shape_height", "shape_corners",
         "text_size", "icon_size", "bitmap_width", "bitmap_alpha",
     }

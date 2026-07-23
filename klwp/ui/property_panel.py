@@ -29,7 +29,7 @@ class AnchorChoices:
         labels = dict(pairs)
         text = str(internal_value or DEFAULT_ANCHOR)
         normalized = text.upper()
-        return labels.get(normalized, "上")
+        return labels.get(normalized, labels[DEFAULT_ANCHOR])
 
     @staticmethod
     def _reversed_pair(choice):
@@ -43,6 +43,12 @@ class AnchorChoices:
 
 
 class PropertyPanelBuilder:
+    POSITION_FIELDS = (
+        "position_offset_x", "position_offset_y",
+        "position_padding_left", "position_padding_right",
+        "position_padding_top", "position_padding_bottom",
+    )
+
     def __init__(self, owner, item):
         self._owner = owner
         self._item = item
@@ -53,6 +59,7 @@ class PropertyPanelBuilder:
             self._empty_message()
             return
         self._heading()
+        self._position_hint()
         self._property_fields()
         self._text_editor()
         self._image_button()
@@ -71,7 +78,7 @@ class PropertyPanelBuilder:
         memory = owner.memory
         ttk.Label(
             memory['prop_frame'],
-            text="左のツリーまたはプレビューから\n要素を選択してください"
+            text="要素が選択されていません\n次の要素はルートへ追加されます"
         ).pack(pady=20)
 
     def _heading(self):
@@ -81,6 +88,17 @@ class PropertyPanelBuilder:
         ttk.Label(
             memory['prop_frame'], text=module_label(item),
             font=("", 11, "bold")).pack(anchor="w", pady=(0, 6))
+
+    def _position_hint(self):
+        descriptions = {
+            True: "配置: アンカー基準の横・縦オフセット",
+            False: "配置: 親レイヤー内の四辺余白",
+        }
+        owner = self._owner
+        memory = owner.memory
+        ttk.Label(
+            memory['prop_frame'], text=descriptions[self._uses_root_offsets()]
+        ).pack(anchor="w", pady=(0, 4))
 
     def _property_fields(self):
         owner = self._owner
@@ -95,12 +113,10 @@ class PropertyPanelBuilder:
         grid.columnconfigure(1, weight=1)
 
     def _property_field(self, grid, row, key, label):
-        owner = self._owner
         item = self._item
-        always_visible = (
-            "internal_title", "position_anchor",
-            "position_offset_x", "position_offset_y")
-        if key not in item and key not in always_visible:
+        if key in self.POSITION_FIELDS and not self._position_field_is_visible(key):
+            return 0
+        if key not in item and not self._field_is_required(key):
             return 0
         ttk.Label(grid, text=label).grid(
             row=row, column=0, sticky="w", pady=2)
@@ -111,6 +127,26 @@ class PropertyPanelBuilder:
         builder = builders.get(key, self._entry_field)
         builder(grid, row, key)
         return 1
+
+    @staticmethod
+    def _field_is_required(key):
+        return key in ("internal_title", "position_anchor")
+
+    def _position_field_is_visible(self, key):
+        root_fields = ("position_offset_x", "position_offset_y")
+        child_fields = (
+            "position_padding_left", "position_padding_right",
+            "position_padding_top", "position_padding_bottom")
+        if self._uses_root_offsets():
+            return key in root_fields or key in self._item
+        return key in child_fields
+
+    def _uses_root_offsets(self):
+        owner = self._owner
+        memory = owner.memory
+        archive = memory['archive']
+        return any(map(
+            lambda root: root is self._item, archive.modules()))
 
     def _entry_field(self, grid, row, key):
         owner = self._owner

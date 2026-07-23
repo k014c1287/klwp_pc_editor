@@ -17,7 +17,7 @@ class PlacementCalculator:
         horizontal = self._base_horizontal()
         vertical = self._base_vertical()
         horizontal = self._horizontal_with_padding(horizontal, padding)
-        vertical = self._vertical_with_padding(vertical, padding, version)
+        vertical = self._vertical_with_padding(vertical, padding)
         return self._root_offsets(horizontal, vertical, version)
 
     def _padding(self):
@@ -88,19 +88,20 @@ class PlacementCalculator:
         return box_vertical + box_height / 2 - height / 2
 
     def _horizontal_with_padding(self, horizontal, padding):
-        difference = padding.horizontal_difference()
-        if self._anchor() in ("TOP", "CENTER", "BOTTOM"):
-            return horizontal + difference / 2
-        return horizontal + difference
-
-    def _vertical_with_padding(self, vertical, padding, version):
-        difference = padding.vertical_difference()
         anchor = self._anchor()
-        if anchor not in ("CENTERLEFT", "CENTER", "CENTERRIGHT"):
-            return vertical + difference
-        if version <= 10 and self._is_component():
-            return vertical + difference * 0.75
-        return vertical + difference / 2
+        if anchor in ("TOPLEFT", "CENTERLEFT", "BOTTOMLEFT"):
+            return horizontal + padding["left"]
+        if anchor in ("TOPRIGHT", "CENTERRIGHT", "BOTTOMRIGHT"):
+            return horizontal - padding["right"]
+        return horizontal + padding.horizontal_difference() / 2
+
+    def _vertical_with_padding(self, vertical, padding):
+        anchor = self._anchor()
+        if anchor in ("TOPLEFT", "TOP", "TOPRIGHT"):
+            return vertical + padding["top"]
+        if anchor in ("BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT"):
+            return vertical - padding["bottom"]
+        return vertical + padding.vertical_difference() / 2
 
     def _root_offsets(self, horizontal, vertical, version):
         if not self._request["is_root"]:

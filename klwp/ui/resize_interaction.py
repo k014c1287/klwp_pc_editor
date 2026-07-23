@@ -65,15 +65,8 @@ class ResizeInteractionMixin:
         actual_left, actual_top, _actual_width, _actual_height = actual
         difference_horizontal = target_left - actual_left
         difference_vertical = target_top - actual_top
-        anchor = item.get("position_anchor") or DEFAULT_ANCHOR
-        horizontal_sign = self._horizontal_drag_sign(anchor)
-        vertical_sign = self._vertical_drag_sign(anchor)
-        horizontal_offset = float(item.get("position_offset_x", 0) or 0)
-        vertical_offset = float(item.get("position_offset_y", 0) or 0)
-        item["position_offset_x"] = round(
-            horizontal_offset + horizontal_sign * difference_horizontal, 1)
-        item["position_offset_y"] = round(
-            vertical_offset + vertical_sign * difference_vertical, 1)
+        mutation = self._position_mutation(item)
+        mutation.move_by(difference_horizontal, difference_vertical)
 
     def _refresh_nested_bounds(self, item):
         memory = self.memory

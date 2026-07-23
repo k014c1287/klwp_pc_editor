@@ -19,6 +19,10 @@ class TreeDragMixin:
         tree = self.memory["tree"]
         identifier = tree.identify_row(event.y)
         self.memory["tree_drag"] = self._new_tree_drag(identifier, event.y)
+        if identifier:
+            return None
+        self.cmd_clear_selection()
+        return "break"
 
     def _new_tree_drag(self, identifier, vertical):
         tree_map = self.memory["tree_map"]
