@@ -24,7 +24,9 @@ class PreviewModelMixin:
 
     def _preview_page_count(self):
         archive = self.memory['archive']
-        counter = PreviewPageCounter(archive.root_module())
+        preset = archive["preset"]
+        information = preset.get("preset_info", {})
+        counter = PreviewPageCounter(archive.root_module(), information)
         return counter.count()
 
     def _reset_preview_state(self):

@@ -2,6 +2,7 @@
 
 from ..shared import *  # noqa: F401,F403
 from ..positioning import PositionMutation
+from ..preview.pages import PresetPageCount
 from .resize_interaction import ResizeInteractionMixin
 
 
@@ -36,6 +37,37 @@ class PreviewInteractionMixin:
         memory = self.memory
         if redraw and memory.optional("canvas") is not None:
             self._render()
+
+    def cmd_page_count(self):
+        current = self._preview_page_count()
+        total = simpledialog.askinteger(
+            APP_TITLE, "総ページ数:",
+            initialvalue=current, minvalue=1,
+            maxvalue=PresetPageCount.MAXIMUM, parent=self)
+        if total is None:
+            return
+        self._change_page_count(total)
+
+    def _change_page_count(self, total):
+        archive = self.memory['archive']
+        preset = archive["preset"]
+        information = preset.setdefault("preset_info", {})
+        setting = PresetPageCount(information)
+        if not setting.apply(total):
+            return
+        self._mark_dirty()
+        self._update_page_count_controls()
+        count = self._preview_page_count()
+        self._set_status(f"総ページ数を {count} に変更しました")
+
+    def _update_page_count_controls(self):
+        memory = self.memory
+        page_count = self._preview_page_count()
+        page_scale = memory.optional("preview_page_scale")
+        if page_scale is not None:
+            page_scale.configure(to=float(page_count))
+        current = memory.optional("preview_scroll", 0.0)
+        self._set_preview_scroll(current)
 
     def _update_page_variable(self):
         memory = self.memory

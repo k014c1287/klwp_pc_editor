@@ -18,6 +18,7 @@ from klwp.ui.global_dialog import GlobalEntryValues
 from klwp.ui.setting_values import TouchActionValues
 from klwp.ui.document import DocumentMixin
 from klwp.adb import AdbDevices, AdbTransfer
+from klwp.preview.pages import PresetPageCount, PreviewPageCounter
 from klwp.ui.tree import ModuleTreePresentation
 from klwp.ui.tree_drag import TreeDragMixin, TreeReorder
 
@@ -234,6 +235,32 @@ class ModuleTreeTests(unittest.TestCase):
         tree.selection_remove.assert_called_once_with("layer-row")
         self.assertIsNone(editor.memory['selected'])
         self.assertIs(editor._target_list(), archive.modules())
+
+
+class PreviewPageTests(unittest.TestCase):
+    def test_page_count_uses_and_updates_klwp_xscreens(self):
+        information = {"xscreens": 2}
+        root_module = {"viewgroup_items": [{
+            "internal_animations": [{"type": "SCROLL"}],
+        }]}
+        setting = PresetPageCount(information)
+
+        self.assertEqual(
+            PreviewPageCounter(root_module, information).count(), 3)
+        self.assertTrue(setting.apply(5))
+        self.assertEqual(information["xscreens"], 4)
+        self.assertEqual(setting.specified(), 5)
+        self.assertFalse(setting.apply(5))
+
+    def test_sample_page_counts_follow_saved_values(self):
+        expected = {"genoblanc.klwp": 3, "S041.klwp": 2}
+        for name, count in expected.items():
+            archive = ke.KlwpArchive()
+            archive.load(SAMPLES / name)
+            information = archive["preset"]["preset_info"]
+            counter = PreviewPageCounter(
+                archive.root_module(), information)
+            self.assertEqual(counter.count(), count, name)
 
 
 class ResizeTests(unittest.TestCase):
@@ -538,6 +565,25 @@ class HistoryTests(unittest.TestCase):
         self.assertIs(editor.memory['archive']['bitmaps'][name], old_data)
         editor.cmd_redo()
         self.assertIs(editor.memory['archive']['bitmaps'][name], new_data)
+
+    def test_page_count_is_saved_clamped_and_undoable(self):
+        editor = self.editor()
+        editor.memory["preview_scroll"] = 0.0
+        with patch(
+                "klwp.ui.interaction.simpledialog.askinteger",
+                return_value=4):
+            editor.cmd_page_count()
+
+        information = editor.memory["archive"]["preset"]["preset_info"]
+        self.assertEqual(information["xscreens"], 3)
+        self.assertEqual(editor._preview_page_count(), 4)
+        self.assertTrue(editor.memory["dirty"])
+
+        editor.memory["preview_scroll"] = 3.0
+        editor._change_page_count(2)
+        self.assertEqual(editor.memory["preview_scroll"], 1.0)
+        editor.cmd_undo()
+        self.assertEqual(editor._preview_page_count(), 4)
 
 
 @unittest.skipUnless(ke.HAS_TK and ke.HAS_PIL, "Tkinter/Pillow required")

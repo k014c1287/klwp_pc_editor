@@ -160,13 +160,16 @@ class EditorWindowBuilder:
         variable = tk.DoubleVar(value=1.0)
         owner.memory['preview_page_var'] = variable
         scale = ttk.Scale(
-            controls, from_=1.0, to=3.0, variable=variable,
+            controls, from_=1.0, to=1.0, variable=variable,
             command=owner._on_preview_page_changed, length=150)
         scale.pack(side="left", fill="x", expand=True)
         owner.memory['preview_page_scale'] = scale
-        label = ttk.Label(controls, text="1.00 / 3")
-        label.pack(side="left", padx=(4, 8))
+        label = ttk.Label(controls, text="1.00 / 1")
+        label.pack(side="left", padx=(4, 3))
         owner.memory['preview_page_label'] = label
+        ttk.Button(
+            controls, text="総数…", command=owner.cmd_page_count,
+            width=5).pack(side="left", padx=(0, 5))
 
     def _loop_button(self, controls):
         owner = self._owner

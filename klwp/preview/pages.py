@@ -3,15 +3,51 @@
 import re
 
 
+class PresetPageCount:
+    MINIMUM = 1
+    MAXIMUM = 99
+
+    def __init__(self, preset_information):
+        self._information = preset_information
+
+    def specified(self):
+        information = self._information
+        if "xscreens" not in information:
+            return None
+        try:
+            total = int(information["xscreens"]) + 1
+        except (TypeError, ValueError):
+            return None
+        return self._normalized(total)
+
+    def apply(self, total):
+        archive_value = self._normalized(total) - 1
+        information = self._information
+        if information.get("xscreens") == archive_value:
+            return False
+        information["xscreens"] = archive_value
+        return True
+
+    @classmethod
+    def _normalized(cls, total):
+        value = int(total)
+        return max(cls.MINIMUM, min(cls.MAXIMUM, value))
+
+
 class PreviewPageCounter:
-    def __init__(self, root_module):
+    def __init__(self, root_module, preset_information=None):
         self._state = {
             "root": root_module,
+            "information": preset_information or {},
             "count": 1,
             "has_scroll": False,
         }
 
     def count(self):
+        specified = PresetPageCount(
+            self._state["information"]).specified()
+        if specified is not None:
+            return specified
         self._visit(self._state["root"])
         if self._state["has_scroll"]:
             self._state["count"] = max(self._state["count"], 3)

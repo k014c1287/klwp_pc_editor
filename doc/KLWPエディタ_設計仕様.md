@@ -361,7 +361,7 @@ classDiagram
 
 ### 2.4 プレビュー、アニメーション、Kode数式
 
-プレビュー状態は KLWP アーカイブへ保存されません。現在ページ、スイッチの目標値と補間値、ループ開始時刻、タップ領域などは `ApplicationMemory` 内だけに存在します。
+現在ページ、スイッチの目標値と補間値、ループ開始時刻、タップ領域などのプレビュー状態は KLWP アーカイブへ保存されず、`ApplicationMemory` 内だけに存在します。一方、総ページ数は壁紙設定の一部として `preset_info.xscreens` に「総ページ数−1」を保存します。
 
 ```mermaid
 classDiagram
@@ -381,6 +381,11 @@ classDiagram
         -_root_module
         -_pages
         +count()
+    }
+    class PresetPageCount {
+        -_information
+        +specified()
+        +apply(total)
     }
     class ScrollFadeRuleDetector {
         -_modules
@@ -457,6 +462,7 @@ classDiagram
 
     PreviewModelMixin ..> PreviewStateResetter
     PreviewModelMixin ..> PreviewPageCounter
+    PreviewPageCounter ..> PresetPageCount : saved page count
     PreviewModelMixin ..> ScrollFadeRuleDetector
     PreviewModelMixin ..> RootGlobalValues
     PreviewModelMixin ..> ModuleValueResolver
@@ -818,7 +824,7 @@ sequenceDiagram
 
 ### 3.6 横スワイプによるページ追従
 
-ドラッグ中はポインタ移動量を Canvas 幅で割って連続的なページ位置へ変換します。指を離した後は最寄りページへ 250ms でスムーズに吸着します。
+ドラッグ中はポインタ移動量を Canvas 幅で割って連続的なページ位置へ変換します。指を離した後は最寄りページへ 250ms でスムーズに吸着します。「総数…」では1～99の総ページ数を指定でき、`PresetPageCount` がKLWPの `xscreens = 総ページ数 - 1` へ変換して保存します。保存値が存在するプリセットではその値を優先し、旧形式など保存値がない場合だけアニメーションとページ移動イベントから推定します。ページ数を現在位置より小さくした場合は、新しい最終ページへプレビュー位置を補正します。
 
 ```mermaid
 sequenceDiagram
