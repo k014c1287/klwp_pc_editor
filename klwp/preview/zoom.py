@@ -59,6 +59,8 @@ class CachedPreviewImage:
 
     def viewport(self, target_size, viewport_size, origin):
         image = self._image
+        if image.size == target_size:
+            return self._crop(viewport_size, origin)
         source_width, source_height = image.size
         target_width, target_height = target_size
         horizontal_ratio = source_width / max(1, target_width)
@@ -70,3 +72,28 @@ class CachedPreviewImage:
         return image.transform(
             viewport_size, Transform.AFFINE, coefficients,
             resample=Resampling.BILINEAR)
+
+    def _crop(self, viewport_size, origin):
+        image = self._image
+        width, height = viewport_size
+        horizontal, vertical = map(int, origin)
+        box = (
+            horizontal, vertical,
+            horizontal + width, vertical + height)
+        return image.crop(box)
+
+
+class PreviewPan:
+    """Move the viewport as though the rendered background were grabbed."""
+
+    def __init__(self, pointer, origin):
+        self._pointer = pointer
+        self._origin = origin
+
+    def moved_origin(self, pointer):
+        initial_horizontal, initial_vertical = self._pointer
+        current_horizontal, current_vertical = pointer
+        origin_horizontal, origin_vertical = self._origin
+        return (
+            origin_horizontal - current_horizontal + initial_horizontal,
+            origin_vertical - current_vertical + initial_vertical)

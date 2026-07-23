@@ -20,7 +20,7 @@ from klwp.ui.document import DocumentMixin
 from klwp.ui.window import EditorWindowBuilder
 from klwp.adb import AdbDevices, AdbTransfer
 from klwp.preview.pages import PresetPageCount, PreviewPageCounter
-from klwp.preview.zoom import CachedPreviewImage, PreviewZoom
+from klwp.preview.zoom import CachedPreviewImage, PreviewPan, PreviewZoom
 from klwp.ui.tree import ModuleTreePresentation
 from klwp.ui.tree_drag import TreeDragMixin, TreeReorder
 from klwp.ui.zoom import PreviewZoomMixin
@@ -429,6 +429,48 @@ class PreviewZoomTests(unittest.TestCase):
         self.assertEqual(quality.size, (342, 760))
         self.assertIs(renderer.memory["_quality_preview"], quality)
         self.assertEqual(renderer.memory["_viewport_size"], (420, 760))
+
+
+class PreviewPanTests(unittest.TestCase):
+    def test_grabbed_background_moves_opposite_to_pointer(self):
+        pan = PreviewPan((100.0, 200.0), (300.0, 400.0))
+
+        origin = pan.moved_origin((140.0, 170.0))
+
+        self.assertEqual(origin, (260.0, 430.0))
+
+    @unittest.skipUnless(ke.HAS_TK and ke.HAS_PIL, "Tkinter/Pillow required")
+    def test_background_drag_pans_clamps_and_avoids_quality_redraw(self):
+        renderer = object.__new__(ke.EditorApp)
+        renderer.memory = ke.ApplicationMemory()
+        renderer.memory["canvas"] = Mock()
+        renderer.memory["device_res"] = (1080, 2400)
+        renderer.memory["preview_zoom"] = 2.0
+        renderer.memory["_scale"] = 0.95
+        renderer.memory["_doc"] = (720.0, 1600.0)
+        renderer.memory["_view_origin"] = (0.0, 0.0)
+        renderer.memory["_view_pan_state"] = None
+        renderer.memory["_zoom_render_after_id"] = None
+        renderer.memory["_quality_preview"] = ke.Image.new(
+            "RGBA", (684, 1520), "#123456")
+        renderer.memory["_item_bounds"] = []
+        renderer.memory["resize_state"] = None
+        renderer.memory["drag_state"] = None
+        renderer.memory["selected"] = None
+        renderer.after = Mock()
+        press = type("Event", (), {"x": 100.0, "y": 100.0})()
+        beyond_edge = type("Event", (), {"x": 150.0, "y": 150.0})()
+        return_from_edge = type("Event", (), {"x": 140.0, "y": 140.0})()
+
+        with patch("klwp.render.zoom.ImageTk.PhotoImage"):
+            renderer._on_canvas_press(press)
+            renderer._on_canvas_drag(beyond_edge)
+            renderer._on_canvas_drag(return_from_edge)
+            renderer._on_canvas_release(return_from_edge)
+
+        self.assertEqual(renderer.memory["_view_origin"], (10, 10))
+        self.assertIsNone(renderer.memory["_view_pan_state"])
+        renderer.after.assert_not_called()
 
 
 class ResizeTests(unittest.TestCase):

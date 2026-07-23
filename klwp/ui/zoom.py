@@ -14,6 +14,7 @@ class PreviewZoomMixin:
 
     def cmd_zoom_reset(self):
         self._cancel_zoom_quality_render()
+        self.memory["_view_pan_state"] = None
         self.memory["preview_zoom"] = PreviewZoom.MINIMUM
         self.memory["_view_origin"] = (0.0, 0.0)
         self._update_preview_zoom_label()
@@ -149,6 +150,7 @@ class PreviewZoomMixin:
 
     def _reset_preview_zoom(self):
         self._cancel_zoom_quality_render()
+        self.memory["_view_pan_state"] = None
         self.memory["preview_zoom"] = PreviewZoom.MINIMUM
         self.memory["_view_origin"] = (0.0, 0.0)
         self._update_preview_zoom_label()

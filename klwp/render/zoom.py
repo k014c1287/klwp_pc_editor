@@ -26,3 +26,14 @@ class ZoomPreviewRendererMixin:
         self.memory["_photo"] = photo
         canvas.create_image(0, 0, image=photo, anchor="nw")
         self._paint_selection(canvas)
+
+    def _quality_preview_is_current(self):
+        memory = self.memory
+        source = memory.optional("_quality_preview")
+        if source is None:
+            return False
+        document_width, document_height = memory["_doc"]
+        scale = memory["_scale"]
+        target_size = (
+            int(document_width * scale), int(document_height * scale))
+        return source.size == target_size

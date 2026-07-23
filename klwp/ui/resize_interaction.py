@@ -40,6 +40,9 @@ class ResizeInteractionMixin:
         if self._interaction_enabled():
             canvas.configure(cursor="")
             return
+        if memory.optional("_view_pan_state") is not None:
+            canvas.configure(cursor="fleur")
+            return
         horizontal, vertical = self._document_point(event)
         handle = self._resize_handle_at(horizontal, vertical)
         canvas.configure(cursor=ResizeHandleSet.cursor(handle))

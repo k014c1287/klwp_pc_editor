@@ -3,6 +3,7 @@
 from ..shared import *  # noqa: F401,F403
 from ..positioning import PositionMutation
 from ..preview.pages import PresetPageCount
+from .pan import PreviewPanMixin
 from .resize_interaction import ResizeInteractionMixin
 
 
@@ -235,7 +236,8 @@ class PreviewInteractionMixin:
         left, top, width, height = bounds
         return left <= horizontal <= left + width and top <= vertical <= top + height
 
-class InteractionMixin(PreviewInteractionMixin, ResizeInteractionMixin):
+class InteractionMixin(
+        PreviewInteractionMixin, ResizeInteractionMixin, PreviewPanMixin):
     def _on_canvas_press(self, event):
         if self._interaction_enabled():
             self._start_interaction_drag(event)
@@ -245,6 +247,7 @@ class InteractionMixin(PreviewInteractionMixin, ResizeInteractionMixin):
             return
         hit = self._hit_item(horizontal, vertical)
         if hit is None:
+            self._start_preview_pan(event)
             return
         self.memory['selected'] = hit
         self.memory['resize_state'] = None
@@ -304,6 +307,8 @@ class InteractionMixin(PreviewInteractionMixin, ResizeInteractionMixin):
             return
         if self._drag_resize(event):
             return
+        if self._drag_preview_pan(event):
+            return
         if not self.memory['drag_state'] or self.memory['selected'] is None:
             return
         self._drag_selected_item(event)
@@ -338,6 +343,8 @@ class InteractionMixin(PreviewInteractionMixin, ResizeInteractionMixin):
             self._release_interaction(event)
             return
         if self._finish_resize():
+            return
+        if self._finish_preview_pan():
             return
         if self.memory['drag_state']:
             self.memory['drag_state'] = None

@@ -34,6 +34,7 @@ class BootstrapMixin:
         memory['preview_values'] = default_preview_values()
         memory['drag_state'] = None
         memory['resize_state'] = None
+        memory['_view_pan_state'] = None
         memory['preview_zoom'] = 1.0
         memory['_view_origin'] = (0.0, 0.0)
         memory['_quality_preview'] = None
