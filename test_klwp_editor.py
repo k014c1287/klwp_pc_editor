@@ -20,6 +20,10 @@ from klwp.ui.document import DocumentMixin
 from klwp.ui.window import EditorWindowBuilder
 from klwp.adb import AdbDevices, AdbTransfer
 from klwp.preview.pages import PresetPageCount, PreviewPageCounter
+from klwp.pixel_diff import (
+    ComparableImages, ComparisonRegion, PixelDiff, PixelDiffThresholds,
+    PresetPreview)
+from klwp.runtime import Resampling
 from klwp.ui.tree import ModuleTreePresentation
 from klwp.ui.tree_drag import TreeDragMixin, TreeReorder
 
@@ -72,6 +76,69 @@ class FormulaTests(unittest.TestCase):
         self.assertEqual(ke.eval_formula("$wi(temp)$", values), -3.0)
         self.assertEqual(ke.eval_formula("$mi(title)$", values), "Edited Song")
         self.assertEqual(ke.eval_formula("$li(loc)$", values), "Sapporo")
+
+
+@unittest.skipUnless(ke.HAS_PIL, "Pillow is required")
+class PixelDiffTests(unittest.TestCase):
+    def test_identical_images_have_perfect_metrics(self):
+        image = ke.Image.new("RGB", (8, 6), "#123456")
+
+        metrics = PixelDiff(ComparableImages(image, image)).measure()
+
+        self.assertEqual(metrics["mse"], 0.0)
+        self.assertIsNone(metrics["psnr"])
+        self.assertEqual(metrics["ssim"], 1.0)
+
+    def test_changed_images_write_metrics_and_heatmap(self):
+        reference = ke.Image.new("RGB", (8, 8), "#000000")
+        actual = reference.copy()
+        actual.paste("#FFFFFF", (0, 0, 4, 4))
+        comparison = PixelDiff(ComparableImages(reference, actual))
+
+        with tempfile.TemporaryDirectory() as directory:
+            metrics = comparison.write_report(directory, heat_gain=3.0)
+            output = Path(directory)
+            stored = json.loads(
+                (output / "metrics.json").read_text(encoding="utf-8"))
+            names = {
+                "reference.png", "actual.png", "heatmap.png", "metrics.json"}
+            self.assertEqual(
+                {path.name for path in output.iterdir()}, names)
+
+        self.assertEqual(stored, metrics)
+        self.assertGreater(metrics["mse"], 0.0)
+        self.assertLess(metrics["ssim"], 1.0)
+        failures = PixelDiffThresholds(0.0, 1.0).failures(metrics)
+        self.assertEqual(len(failures), 2)
+
+    def test_excluded_margin_does_not_affect_metrics(self):
+        reference = ke.Image.new("RGB", (6, 6), "#000000")
+        actual = reference.copy()
+        actual.paste("#FFFFFF", (0, 0, 6, 1))
+        images = ComparableImages(reference, actual)
+        cropped = images.cropped(ComparisonRegion(top=1))
+
+        metrics = PixelDiff(cropped).measure()
+
+        self.assertEqual(metrics["mse"], 0.0)
+        self.assertEqual(metrics["height"], 5)
+
+    def test_sizuka_reference_stays_within_regression_threshold(self):
+        preset = SAMPLES / "sizuka_home.klwp"
+        screenshot = SAMPLES / "Screenshot_20260720-022511.png"
+        if not preset.exists() or not screenshot.exists():
+            self.skipTest("local sizuka_home reference pair is unavailable")
+        timestamp = datetime(2026, 7, 20, 2, 25).timestamp() * 1000.0
+        reference = ke.Image.open(screenshot).convert("RGB")
+        normalized = reference.resize((108, 240), Resampling.LANCZOS)
+        actual = PresetPreview.load(preset, timestamp).render((108, 240))
+        images = ComparableImages(normalized, actual)
+        cropped = images.cropped(ComparisonRegion(top=5, bottom=5))
+
+        metrics = PixelDiff(cropped).measure()
+
+        failures = PixelDiffThresholds(6500.0, 0.1).failures(metrics)
+        self.assertEqual(failures, ())
 
 
 class ShapeTemplateTests(unittest.TestCase):

@@ -23,6 +23,7 @@
 | KLWP形式 | ZIP、`preset.json`、画像、フォント | `klwp/archive.py` |
 | 値と状態 | 値オブジェクト、履歴、コレクション | `klwp/values.py` ほか |
 | Kode/SVG | 数式評価、SVG Path の解析とマスク化 | `klwp/formula.py`, `klwp/svg.py` |
+| 画像差分 | 実機スクショとの指標、ヒートマップ、品質ゲート | `klwp/pixel_diff.py`, `tools/compare_preview.py` |
 | Android転送 | adb検出、端末選択、保存済み成果物のpush | `klwp/adb.py`, `klwp/ui/adb_transfer.py` |
 
 ## 2. クラス図
@@ -1016,6 +1017,77 @@ sequenceDiagram
     Resolver-->>Canvas: background_bitmap参照
     Canvas->>Archive: bitmaps/IMG...を読み込み
     Canvas-->>User: 切替後の背景を表示
+```
+
+### 3.11 実機スクショとのピクセル差分
+
+PC描画の回帰を目視だけに依存させないため、`PresetPreview`が指定日時・解像度で`.klwp`をヘッドレス描画し、`ComparableImages`が実機スクショと同一RGB解像度で比較します。Androidのステータスバー等は`ComparisonRegion`の四辺マージンで除外できます。
+
+MSEはRGB全チャンネルの画素二乗誤差平均、PSNRはMSEから算出し、SSIMはグレースケール画像全体の平均・分散・共分散によるグローバルSSIMです。`PixelDiffThresholds`は最大MSEと最小SSIMを品質ゲートとして評価します。`PixelDiff.write_report()`は正規化済み正解画像、PC描画、差分ヒートマップ、JSON指標を`artifacts/`へ出力します。
+
+```mermaid
+classDiagram
+    class ComparisonRegion {
+        -_margins
+        +apply(image)
+    }
+    class ComparableImages {
+        -_reference
+        -_actual
+        +cropped(region)
+        +mean_squared_error()
+        +structural_similarity()
+        +heatmap(gain)
+    }
+    class PixelDiffMetrics {
+        -_values
+        +as_mapping()
+    }
+    class PixelDiffThresholds {
+        -_limits
+        +failures(metrics)
+    }
+    class PixelDiff {
+        -_images
+        +measure()
+        +write_report(directory, heat_gain)
+    }
+    class PresetPreview {
+        -_archive
+        -_timestamp
+        +load(path, timestamp)
+        +render(dimensions)
+    }
+
+    PresetPreview ..> ComparableImages : actual
+    ComparableImages ..> ComparisonRegion : crop
+    PixelDiff *-- ComparableImages
+    PixelDiff ..> PixelDiffMetrics : measure
+    PixelDiffThresholds ..> PixelDiffMetrics : quality gate
+```
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Developer as 開発者
+    participant CLI as compare_preview.py
+    participant Preview as PresetPreview
+    participant Images as ComparableImages
+    participant Diff as PixelDiff
+    participant Gate as PixelDiffThresholds
+    participant Files as artifacts/pixel_diff
+
+    Developer->>CLI: reference・preset・日時・除外余白
+    CLI->>Preview: render(reference dimensions)
+    Preview-->>CLI: PC描画
+    CLI->>Images: referenceとPC描画をRGB正規化
+    CLI->>Images: ComparisonRegionでsystem UIを除外
+    CLI->>Diff: measure()
+    Diff-->>CLI: MSE・PSNR・SSIM
+    CLI->>Diff: write_report()
+    Diff->>Files: reference・actual・heatmap・metrics
+    CLI->>Gate: failures(metrics)
+    Gate-->>Developer: 合格は0、閾値違反は1
 ```
 
 ## 4. 状態とデータの境界
