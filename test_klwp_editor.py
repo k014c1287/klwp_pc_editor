@@ -686,6 +686,32 @@ class RenderTests(unittest.TestCase):
              for item in page_groups],
             [0.5, 0.5, 0.0])
 
+    def test_sizuka_clock_and_weather_text_bounds_do_not_overlap(self):
+        archive = ke.KlwpArchive()
+        archive.load(SAMPLES / "sizuka_home.klwp")
+        renderer = self.renderer(archive)
+        timestamp = datetime(2026, 7, 22, 11, 0).timestamp() * 1000.0
+        renderer.memory["preview_ts"] = timestamp
+        renderer.render_to_image(342, 760)
+        clock = archive.modules()[1]
+        weather = archive.modules()[4]
+        clock_items = clock["viewgroup_items"]
+        weather_items = weather["viewgroup_items"]
+        hour_bounds = renderer._recorded_bounds(clock_items[3])
+        date_bounds = renderer._recorded_bounds(clock_items[7])
+        temperature_bounds = renderer._recorded_bounds(weather_items[3])
+        clock_bounds = renderer._bounds(clock)
+        clock_top = clock_bounds[1]
+        clock_bottom = clock_top + clock_bounds[3]
+        hour_top = hour_bounds[1]
+        hour_bottom = hour_top + hour_bounds[3]
+        date_bottom = date_bounds[1] + date_bounds[3]
+        temperature_top = temperature_bounds[1]
+
+        self.assertGreaterEqual(hour_top, clock_top)
+        self.assertLessEqual(hour_bottom, clock_bottom)
+        self.assertLess(date_bottom, temperature_top)
+
     def test_formula_backed_bitmap_global_switches_background_by_hour(self):
         archive = ke.KlwpArchive()
         archive.load(SAMPLES / "sizuka_home.klwp")
