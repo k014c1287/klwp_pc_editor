@@ -57,6 +57,7 @@ class DocumentLifecycleMixin:
         self.memory['selected'] = None
         self.memory['drag_state'] = None
         self.memory['resize_state'] = None
+        self._reset_preview_zoom()
         self.memory['photo_cache'].clear()
         self.memory['font_cache'].clear()
         self._reset_preview_state()

@@ -5,6 +5,7 @@ from .ui.bootstrap import BootstrapMixin
 from .ui.document import DocumentMixin
 from .preview.model import PreviewModelMixin
 from .render.canvas import CanvasRendererMixin
+from .render.zoom import ZoomPreviewRendererMixin
 from .render.layout import LayoutMixin
 from .render.compositor import CompositorMixin
 from .render.shapes import ShapeRendererMixin
@@ -16,6 +17,7 @@ from .ui.properties import PropertyPanelMixin
 from .ui.preview_values import PreviewValuesMixin
 from .ui.adb_transfer import AdbTransferMixin
 from .ui.tree_drag import TreeDragMixin
+from .ui.zoom import PreviewZoomMixin
 
 
 if HAS_TK:
@@ -23,6 +25,7 @@ if HAS_TK:
             DocumentMixin,
             PreviewModelMixin,
             CanvasRendererMixin,
+            ZoomPreviewRendererMixin,
             LayoutMixin,
             CompositorMixin,
             ShapeRendererMixin,
@@ -34,6 +37,7 @@ if HAS_TK:
             PreviewValuesMixin,
             AdbTransferMixin,
             TreeDragMixin,
+            PreviewZoomMixin,
             tk.Tk):
         CANVAS_W, CANVAS_H = 420, 760
         HISTORY_LIMIT = 50

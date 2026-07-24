@@ -3,6 +3,7 @@
 from ..shared import *  # noqa: F401,F403
 from ..positioning import PositionMutation
 from ..preview.pages import PresetPageCount
+from .pan import PreviewPanMixin
 from .resize_interaction import ResizeInteractionMixin
 
 
@@ -235,24 +236,31 @@ class PreviewInteractionMixin:
         left, top, width, height = bounds
         return left <= horizontal <= left + width and top <= vertical <= top + height
 
-class InteractionMixin(PreviewInteractionMixin, ResizeInteractionMixin):
+class InteractionMixin(
+        PreviewInteractionMixin, ResizeInteractionMixin, PreviewPanMixin):
     def _on_canvas_press(self, event):
         if self._interaction_enabled():
             self._start_interaction_drag(event)
             return
-        scale = self.memory['_scale']
-        horizontal, vertical = event.x / scale, event.y / scale
+        horizontal, vertical = self._document_point(event)
         if self._start_resize(horizontal, vertical):
             return
-        hit = self._hit_item(horizontal, vertical)
-        if hit is None:
+        memory = self.memory
+        selected = memory.optional("selected")
+        if selected is None:
+            self._start_preview_pan_on_background(event, horizontal, vertical)
             return
-        self.memory['selected'] = hit
+        if not self._inside_item(selected, horizontal, vertical):
+            self._start_preview_pan_on_background(event, horizontal, vertical)
+            return
         self.memory['resize_state'] = None
         self.memory['drag_state'] = (horizontal, vertical)
-        self._rebuild_tree(select=hit)
-        self._render()
-        self._build_props()
+
+    def _start_preview_pan_on_background(
+            self, event, horizontal, vertical):
+        if self._hit_item(horizontal, vertical) is not None:
+            return
+        self._start_preview_pan(event)
 
     def _start_interaction_drag(self, event):
         self.memory['_scroll_transition'] = None
@@ -305,6 +313,8 @@ class InteractionMixin(PreviewInteractionMixin, ResizeInteractionMixin):
             return
         if self._drag_resize(event):
             return
+        if self._drag_preview_pan(event):
+            return
         if not self.memory['drag_state'] or self.memory['selected'] is None:
             return
         self._drag_selected_item(event)
@@ -318,14 +328,14 @@ class InteractionMixin(PreviewInteractionMixin, ResizeInteractionMixin):
         self._set_preview_scroll(state["page"] - difference / canvas_width)
 
     def _drag_selected_item(self, event):
-        scale = self.memory['_scale']
         initial_horizontal, initial_vertical = self.memory['drag_state']
-        difference_horizontal = event.x / scale - initial_horizontal
-        difference_vertical = event.y / scale - initial_vertical
+        horizontal, vertical = self._document_point(event)
+        difference_horizontal = horizontal - initial_horizontal
+        difference_vertical = vertical - initial_vertical
         selected = self.memory['selected']
         mutation = self._position_mutation(selected)
         mutation.move_by(difference_horizontal, difference_vertical)
-        self.memory['drag_state'] = (event.x / scale, event.y / scale)
+        self.memory['drag_state'] = (horizontal, vertical)
         self._render()
 
     def _position_mutation(self, item):
@@ -340,6 +350,8 @@ class InteractionMixin(PreviewInteractionMixin, ResizeInteractionMixin):
             return
         if self._finish_resize():
             return
+        if self._finish_preview_pan():
+            return
         if self.memory['drag_state']:
             self.memory['drag_state'] = None
             self._mark_dirty()
@@ -351,5 +363,5 @@ class InteractionMixin(PreviewInteractionMixin, ResizeInteractionMixin):
         if state["moved"]:
             self._start_scroll_transition(round(self.memory['preview_scroll']))
             return
-        scale = self.memory['_scale']
-        self._trigger_tap_at(event.x / scale, event.y / scale)
+        horizontal, vertical = self._document_point(event)
+        self._trigger_tap_at(horizontal, vertical)
