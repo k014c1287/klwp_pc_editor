@@ -533,6 +533,22 @@ classDiagram
     class JsonEditorDialog {
         +show()
     }
+    class KodeEditorDialog {
+        +show()
+    }
+    class KodeTargetCollection {
+        +names()
+        +source(target)
+        +valid(target)
+        +apply(target, source)
+    }
+    class KodeInspector {
+        +inspect()
+    }
+    class KodeSyntax {
+        +problem(source)
+        +unsupported_functions(source)
+    }
     class ShapeDialog {
         +show()
     }
@@ -591,6 +607,11 @@ classDiagram
     ShapeDialog ..> ColorControl : creation color
     ColorControl *-- KlwpColor : AARRGGBB value
     EditorApp ..> JsonEditorDialog : raw JSON edit
+    PropertyPanelBuilder ..> KodeEditorDialog : live Kode edit
+    KodeEditorDialog *-- KodeTargetCollection : selected item fields
+    KodeEditorDialog ..> KodeInspector : validate and preview
+    KodeInspector ..> KodeSyntax : structural check
+    KodeInspector ..> FormulaParser : current preview values
     EditorApp ..> ShapeDialog : add shape
     EditorApp ..> BackgroundDialog : background
     BackgroundDialog ..> BackgroundImageBinding : formula and Global link
@@ -1016,6 +1037,44 @@ sequenceDiagram
     Resolver-->>Canvas: background_bitmap参照
     Canvas->>Archive: bitmaps/IMG...を読み込み
     Canvas-->>User: 切替後の背景を表示
+```
+
+### 3.11 Kode数式のライブ編集
+
+選択要素の `text_expression` と `internal_formulas.<property>` を同じ画面で編集します。入力中は120msのデバウンス後にドル記号・括弧・引用符を検査し、構文が正しければ現在のプレビュー日時・天気・バッテリー等を用いて評価します。PC評価器が未対応の関数はKLWP互換性のため保存を妨げず、警告として表示します。適用時は対象フィールドだけを書き換え、他の未知キーと数式を保持して履歴へ記録します。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Panel as PropertyPanelBuilder
+    participant Dialog as KodeEditorDialog
+    participant Targets as KodeTargetCollection
+    participant Syntax as KodeSyntax
+    participant Inspector as KodeInspector
+    participant Preview as RootGlobalValues
+    participant Formula as FormulaParser
+    participant History as HistoryTimeline
+
+    User->>Panel: Kode 数式をライブ編集
+    Panel->>Dialog: show(selected item)
+    Dialog->>Targets: names()
+    Targets-->>Dialog: text_expression / internal_formulas.*
+    User->>Dialog: 数式入力または関数候補を挿入
+    Dialog->>Syntax: problem(source)
+    alt 構造エラー
+        Syntax-->>Dialog: エラー内容
+        Dialog-->>User: 適用を抑止
+    else 構文OK
+        Dialog->>Preview: 現在のプレビュー値
+        Dialog->>Inspector: inspect(source, values)
+        Inspector->>Formula: eval_formula
+        Formula-->>Dialog: 評価結果
+        Dialog-->>User: ライブ評価を表示
+    end
+    User->>Dialog: 適用
+    Dialog->>Targets: apply(target, source)
+    Dialog->>History: record(snapshot)
 ```
 
 ## 4. 状態とデータの境界

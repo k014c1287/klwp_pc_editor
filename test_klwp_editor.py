@@ -16,6 +16,9 @@ from klwp.positioning import PositionMutation
 from klwp.background import BackgroundImageBinding, BitmapGlobalCollection
 from klwp.ui.global_dialog import GlobalEntryValues
 from klwp.ui.setting_values import TouchActionValues
+from klwp.ui.kode_dialog import (
+    KodeInspector, KodeSyntax, KodeTargetCollection,
+)
 from klwp.ui.document import DocumentMixin
 from klwp.ui.window import EditorWindowBuilder
 from klwp.adb import AdbDevices, AdbTransfer
@@ -72,6 +75,40 @@ class FormulaTests(unittest.TestCase):
         self.assertEqual(ke.eval_formula("$wi(temp)$", values), -3.0)
         self.assertEqual(ke.eval_formula("$mi(title)$", values), "Edited Song")
         self.assertEqual(ke.eval_formula("$li(loc)$", values), "Sapporo")
+
+    def test_kode_live_editor_reports_structural_errors(self):
+        self.assertEqual(KodeSyntax.problem("$if(1, yes, no)$"), "")
+        self.assertIn("$", KodeSyntax.problem("$if(1, yes, no)"))
+        self.assertIn("括弧", KodeSyntax.problem("$if(1, yes, no$"))
+        self.assertIn("引用符", KodeSyntax.problem('$tc(up, "abc)$'))
+
+    def test_kode_live_editor_evaluates_current_preview_values(self):
+        values = {"__preview__": {"weather": {"temp": -8.5}}}
+
+        inspection = KodeInspector(
+            "気温 $wi(temp)$°C", values).inspect()
+
+        self.assertTrue(inspection["valid"])
+        self.assertEqual(inspection["status"], "構文OK")
+        self.assertEqual(inspection["preview"], "気温 -8.5°C")
+
+    def test_kode_targets_preserve_unrelated_internal_formulas(self):
+        item = {
+            "internal_type": "TextModule",
+            "text_expression": "$df(HH:mm)$",
+            "internal_formulas": {"paint_color": "$gv(color)$"},
+        }
+        targets = KodeTargetCollection(item)
+
+        targets.apply("internal_formulas.text_size", "$gv(size)$")
+        targets.apply("text_expression", "$mi(title)$")
+
+        self.assertIn("text_expression", targets.names())
+        self.assertEqual(item["text_expression"], "$mi(title)$")
+        self.assertEqual(
+            item["internal_formulas"]["paint_color"], "$gv(color)$")
+        self.assertEqual(
+            item["internal_formulas"]["text_size"], "$gv(size)$")
 
 
 class ShapeTemplateTests(unittest.TestCase):
