@@ -533,6 +533,20 @@ classDiagram
     class JsonEditorDialog {
         +show()
     }
+    class IconPickerDialog {
+        +show()
+    }
+    class IconCatalog {
+        +from_archive(archive)
+        +search(query)
+        +apply(item, entry)
+    }
+    class IconCatalogEntry {
+        +material(name, label, path)
+        +from_module(module)
+        +encoded_value()
+        +set_reference()
+    }
     class ShapeDialog {
         +show()
     }
@@ -591,6 +605,10 @@ classDiagram
     ShapeDialog ..> ColorControl : creation color
     ColorControl *-- KlwpColor : AARRGGBB value
     EditorApp ..> JsonEditorDialog : raw JSON edit
+    PropertyPanelBuilder ..> IconPickerDialog : FontIcon selection
+    IconPickerDialog *-- IconCatalog : searchable entries
+    IconCatalog *-- IconCatalogEntry
+    IconCatalogEntry ..> SvgPathParser : encode/decode embedded SVG
     EditorApp ..> ShapeDialog : add shape
     EditorApp ..> BackgroundDialog : background
     BackgroundDialog ..> BackgroundImageBinding : formula and Global link
@@ -1016,6 +1034,38 @@ sequenceDiagram
     Resolver-->>Canvas: background_bitmap参照
     Canvas->>Archive: bitmaps/IMG...を読み込み
     Canvas-->>User: 切替後の背景を表示
+```
+
+### 3.11 FontIconの検索・選択
+
+FontIconは `icon_set` と `icon_icon` の組で保存します。`icon_icon` は名前だけではなく、KLWPがオフラインで読み込めるようSVGをgzip/Base64化した自己完結形式です。ピッカーは内蔵Materialアイコンに加え、現在のプリセットに存在するFontIconを走査してカスタムSVGも候補へ再利用します。選択時はアイコン関連の2フィールドだけを更新し、サイズ・色・数式等は保持します。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Panel as PropertyPanelBuilder
+    participant Dialog as IconPickerDialog
+    participant Catalog as IconCatalog
+    participant Entry as IconCatalogEntry
+    participant Archive as KlwpArchive
+    participant Svg as encode_kustom_icon
+    participant History as HistoryTimeline
+    participant Preview as CanvasRendererMixin
+
+    User->>Panel: FontIcon を選択
+    Panel->>Dialog: show(selected item)
+    Dialog->>Catalog: from_archive(archive)
+    Catalog->>Archive: 全FontIconModuleを走査
+    Catalog->>Entry: 既存の内蔵SVGを候補化
+    Catalog->>Svg: Material SVGをgzip/Base64化
+    Catalog-->>Dialog: 検索可能な候補一覧
+    User->>Dialog: 名前を検索してグリッドをクリック
+    Dialog->>Catalog: apply(item, entry)
+    Catalog->>Entry: icon_set / encoded_value
+    Dialog->>History: record(snapshot)
+    Dialog->>Preview: refresh selected item
+    Preview-->>User: 選択したアイコンを表示
 ```
 
 ## 4. 状態とデータの境界

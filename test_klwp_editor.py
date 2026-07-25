@@ -14,6 +14,8 @@ from klwp.ui.color_control import KlwpColor
 from klwp.resize import ResizeHandleSet, ResizeSession
 from klwp.positioning import PositionMutation
 from klwp.background import BackgroundImageBinding, BitmapGlobalCollection
+from klwp.icons import IconCatalog, MATERIAL_ICON_SET
+from klwp.svg import decode_kustom_icon
 from klwp.ui.global_dialog import GlobalEntryValues
 from klwp.ui.setting_values import TouchActionValues
 from klwp.ui.document import DocumentMixin
@@ -95,6 +97,58 @@ class ShapeTemplateTests(unittest.TestCase):
         expected = [ke.make_shape_module(label).get("shape_type")
                     for label in ke.SHAPE_TYPE_OPTIONS]
         self.assertCountEqual(actual, expected)
+
+
+class IconPickerTests(unittest.TestCase):
+    def test_material_icon_catalog_encodes_self_contained_svg(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        catalog = IconCatalog.from_archive(archive)
+
+        entries = catalog.search()
+
+        self.assertGreaterEqual(len(entries), 17)
+        for entry in entries:
+            name, paths, viewbox = decode_kustom_icon(
+                entry.encoded_value())
+            self.assertEqual(name, entry.name())
+            self.assertTrue(paths, entry.name())
+            self.assertEqual(viewbox, (0.0, 0.0, 24.0, 24.0))
+
+    def test_icon_catalog_reuses_sample_icon_and_applies_selection(self):
+        archive = ke.KlwpArchive()
+        archive.load(SAMPLES / "sizuka_home.klwp")
+        catalog = IconCatalog.from_archive(archive)
+        camera = catalog.search("camera")[0]
+        item = ke.make_module("icon")
+        item["icon_size"] = 84.0
+
+        catalog.apply(item, camera)
+
+        self.assertEqual(item["icon_set"], MATERIAL_ICON_SET)
+        self.assertTrue(item["icon_icon"].startswith("camera#"))
+        self.assertEqual(item["icon_size"], 84.0)
+        self.assertEqual(len(catalog.search("一時停止")), 1)
+
+    def test_selected_icon_survives_klwp_archive_round_trip(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        catalog = IconCatalog.from_archive(archive)
+        item = ke.make_module("icon")
+        catalog.apply(item, catalog.search("スター")[0])
+        archive.modules().append(item)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "icon.klwp"
+            archive.save(path)
+            loaded = ke.KlwpArchive()
+            loaded.load(path)
+
+        saved = loaded.modules()[0]
+        name, paths, viewbox = decode_kustom_icon(saved["icon_icon"])
+        self.assertEqual(name, "star")
+        self.assertTrue(paths)
+        self.assertEqual(viewbox, (0.0, 0.0, 24.0, 24.0))
 
 
 class PropertyPanelTests(unittest.TestCase):
