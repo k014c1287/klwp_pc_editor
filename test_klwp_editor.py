@@ -967,6 +967,31 @@ class RenderTests(unittest.TestCase):
             bounds[0] + bounds[2] / 2,
             bounds[1] + bounds[3] / 2), child)
 
+    def test_sizuka_shape_less_overlap_layers_wrap_all_children(self):
+        archive = ke.KlwpArchive()
+        archive.load(SAMPLES / "sizuka_home.klwp")
+        renderer = self.renderer(archive)
+        global_values = renderer._root_globals()
+        pending = list(archive.modules())
+        shape_less_layers = []
+        while pending:
+            item = pending.pop()
+            children = item.get("viewgroup_items", [])
+            pending.extend(children)
+            child_types = [child.get("internal_type") for child in children]
+            if item.get("internal_type") == "OverlapLayerModule" and \
+                    "ShapeModule" not in child_types:
+                shape_less_layers.append(item)
+
+        sizes = sorted(
+            renderer._layer_box_size(item, global_values)
+            for item in shape_less_layers)
+
+        self.assertEqual(
+            sizes, [(35.0, 35.0), (35.0, 35.0),
+                    (40.0, 40.0), (210.0, 40.0)])
+        self.assertNotIn((200.0, 120.0), sizes)
+
     def test_komponent_scale_applies_to_size_content_and_child_bounds(self):
         archive = ke.KlwpArchive()
         archive.new()
