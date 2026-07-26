@@ -2,6 +2,7 @@
 
 from ..shared import *  # noqa: F401,F403
 from ..positioning import PositionMutation
+from ..selection import ModuleSelection, SelectedItemCollection
 from .asset_dialogs import BackgroundDialog, ImageManagerDialog
 from .shape_dialog import ShapeDialog
 from .tree import ModuleTreeBuilder
@@ -55,6 +56,7 @@ class DocumentLifecycleMixin:
 
     def _after_document_loaded(self):
         self.memory['selected'] = None
+        self.memory['selected_items'] = ()
         self.memory['drag_state'] = None
         self.memory['resize_state'] = None
         self.memory['photo_cache'].clear()
@@ -108,6 +110,7 @@ class DocumentMixin(DocumentLifecycleMixin):
         archive["fonts"] = dict(snapshot["fonts"])
         archive["extras"] = dict(snapshot["extras"])
         self.memory['selected'] = None
+        self.memory['selected_items'] = ()
         self.memory['drag_state'] = None
         self.memory['resize_state'] = None
         self.memory['photo_cache'].clear()
@@ -275,7 +278,13 @@ class DocumentMixin(DocumentLifecycleMixin):
         self._update_title()
 
     def _rebuild_tree(self, select=None):
-        ModuleTreeBuilder(self, select).build()
+        memory = self.memory
+        selected = SelectedItemCollection(
+            memory.optional("selected_items", ()))
+        items = selected.items()
+        if select is not None:
+            items = select if isinstance(select, tuple) else (select,)
+        ModuleTreeBuilder(self, items).build()
 
     def _selected_iid(self):
         selection = self.memory['tree'].selection()
@@ -290,6 +299,7 @@ class DocumentMixin(DocumentLifecycleMixin):
         if selection:
             tree.selection_remove(*selection)
         memory['selected'] = None
+        memory['selected_items'] = ()
         memory['drag_state'] = None
         memory['resize_state'] = None
         self._render()
@@ -302,9 +312,11 @@ class DocumentMixin(DocumentLifecycleMixin):
         return "break"
 
     def _on_tree_select(self, _event):
-        identifier = self._selected_iid()
-        self.memory['selected'] = None
-        if identifier:
-            self.memory['selected'] = self.memory['tree_map'][identifier][0]
+        selection = ModuleSelection.from_memory(self.memory)
+        items = selection.items()
+        self.memory['selected_items'] = items
+        self.memory['selected'] = selection.primary_item()
         self._render()
         self._build_props()
+        if selection.count() > 1:
+            self._set_status(f"{selection.count()}件の要素を選択中")

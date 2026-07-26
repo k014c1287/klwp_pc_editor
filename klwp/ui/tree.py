@@ -42,19 +42,19 @@ class ModuleTreeBuilder:
         tree = memory['tree']
         tree.delete(*tree.get_children())
         memory['tree_map'].clear()
-        selected_identifier = self._add_items(
+        selected_identifiers = self._add_items(
             memory['archive'].modules(), "")
-        if selected_identifier is not None:
-            tree.selection_set(selected_identifier)
-            tree.see(selected_identifier)
+        if selected_identifiers:
+            tree.selection_set(*selected_identifiers)
+            tree.see(selected_identifiers[-1])
 
     def _add_items(self, items, parent_identifier):
-        selected_identifier = None
+        selected_identifiers = []
         for index, item in enumerate(items):
             found = self._add_item(
                 item, items, index, parent_identifier)
-            selected_identifier = found or selected_identifier
-        return selected_identifier
+            selected_identifiers.extend(found)
+        return selected_identifiers
 
     def _add_item(self, item, siblings, index, parent_identifier):
         owner = self._owner
@@ -68,6 +68,15 @@ class ModuleTreeBuilder:
             tags=presentation.tags(item),
             open=parent_identifier == "" and bool(item.get("viewgroup_items")))
         memory['tree_map'][identifier] = (item, siblings)
-        selected_identifier = identifier if item is self._selected else None
+        selected_identifiers = []
+        if self._is_selected(item):
+            selected_identifiers.append(identifier)
         nested = self._add_items(item.get("viewgroup_items", []), identifier)
-        return nested or selected_identifier
+        selected_identifiers.extend(nested)
+        return selected_identifiers
+
+    def _is_selected(self, item):
+        selected = self._selected
+        if isinstance(selected, tuple):
+            return any(candidate is item for candidate in selected)
+        return selected is item
