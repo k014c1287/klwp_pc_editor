@@ -40,7 +40,7 @@ BitmapModule/KomponentModule含む) と `S041.klwp` (要素198個, Stack/Shape�
 - Shape/Textおよび時計グループの回転、TRIANGLE
 - `fx_shadow: OUTER`、`paint_stroke`、動的背景・色・幅・可視性
 - preset_infoの縦横比自動採用、v10旧配置の互換補正
-- GUIなしの `render_to_image()` と回帰・構造テスト（現在57テスト）
+- GUIなしの `render_to_image()` と回帰・構造テスト（現在60テスト）
 - Komponent倍率、線形／放射／Sweepグラデーション、主要blend mode
 - ROTATE/SCALE/色フィルターとease、編集可能なKodeプレビュー値
 - 全グローバル型・外部タップアクションの編集UI、adbワンクリック転送
@@ -48,6 +48,8 @@ BitmapModule/KomponentModule含む) と `S041.klwp` (要素198個, Stack/Shape�
 - 要素ツリーの種類・前面順表示、選択解除によるルート追加先への復帰、同一レイヤー内ドラッグ並べ替え
 - Ctrl+Z/Ctrl+YによるUndo/Redoと、要素ツリーの確認なしDelete削除・Undo復元
 - 総ページ数の編集・Undo/Redo・`preset_info.xscreens` 保存と、縮小時のプレビュー位置補正
+- 100単位ルーラー、キャンバス／他要素の端・中心へのドラッグ吸着、
+  一時整列ガイド（プレビュー専用で成果物には保存しない）
 
 以降に残る「Bitmap/数式/影/回転が未実装」という記述は改修前の履歴であり、
 上記が現行状態。未対応なのは主に公式Kode全関数、新Shader、Android固有の
@@ -277,7 +279,7 @@ presetへ保存しない。ルート要素の `internal_animations` を合成し
 
 ## 6. テスト・検証方法
 
-- 全テスト: `python -m unittest -v`（機能56件＋構造1件）
+- 全テスト: `python -m unittest -v`（機能59件＋構造1件）
 - 構造規約のみ: `python tools/check_object_calisthenics.py`
 - Pillowヘッドレス描画: GUIを起動せず `render_to_image()` を呼び、全sampleを検証
 - ラウンドトリップ: load → save → load で items/bitmaps 数と編集値を assert
@@ -301,6 +303,8 @@ presetへ保存しない。ルート要素の `internal_animations` を合成し
 6. 完了: アプリ・ショートカット・URI・音楽・Kustomタッチ設定UI
 7. 完了: 保存から `/sdcard/Kustom/wallpapers/` へのadbワンクリック転送
 8. 完了: 公式v1/v3/v4/v5を追加し、v10/v11/v15と合わせて回帰検証
+9. 完了: キャンバスの100単位ルーラー、要素・キャンバスの端／中心への
+   7pxスナップ、ドラッグ中の整列ガイド
 
 次の候補は、公式Kodeの未対応関数、Android 3.82 Shader、実機との
 ピクセル差自動比較、ADB経由のアプリ／Activity選択支援である。

@@ -143,6 +143,7 @@ class EditorWindowBuilder:
         controls = ttk.Frame(frame)
         controls.pack(fill="x", padx=8, pady=(0, 4))
         self._interaction_toggle(controls)
+        self._snap_toggle(controls)
         self._page_control(controls)
         self._loop_button(controls)
 
@@ -154,6 +155,15 @@ class EditorWindowBuilder:
             controls, text="操作プレビュー", variable=mode,
             command=owner._on_interaction_mode_changed)
         toggle.pack(side="left")
+
+    def _snap_toggle(self, controls):
+        owner = self._owner
+        enabled = tk.BooleanVar(value=True)
+        owner.memory['snap_enabled'] = enabled
+        ttk.Checkbutton(
+            controls, text="スナップ・定規", variable=enabled,
+            command=owner._on_snap_guides_changed).pack(
+                side="left", padx=(8, 0))
 
     def _page_control(self, controls):
         owner = self._owner

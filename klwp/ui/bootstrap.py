@@ -34,6 +34,7 @@ class BootstrapMixin:
         memory['preview_values'] = default_preview_values()
         memory['drag_state'] = None
         memory['resize_state'] = None
+        memory['snap_guides'] = ()
 
     def _initialize_preview_memory(self):
         memory = self.memory
