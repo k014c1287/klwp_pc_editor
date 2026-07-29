@@ -68,6 +68,10 @@ classDiagram
         -_render()
         +render_to_image(width, height)
     }
+    class ZoomPreviewRendererMixin {
+        -_render_zoom_preview()
+        -_present_zoom_preview(canvas, preview)
+    }
     class LayoutMixin
     class CompositorLeafMixin
     class CompositorMixin
@@ -82,6 +86,11 @@ classDiagram
     class TextRendererMixin
     class PreviewInteractionMixin
     class ResizeInteractionMixin
+    class PreviewPanMixin {
+        -_start_preview_pan(event)
+        -_drag_preview_pan(event)
+        -_finish_preview_pan()
+    }
     class InteractionMixin
     class ResizeHandleSet {
         +supports(item)
@@ -105,6 +114,29 @@ classDiagram
         -_on_tree_drag(event)
         -_on_tree_release(event)
     }
+    class PreviewZoomMixin {
+        +cmd_zoom_in()
+        +cmd_zoom_out()
+        +cmd_zoom_selected()
+        +cmd_zoom_reset()
+        -_document_point(event)
+    }
+    class PreviewZoom {
+        -_value
+        +number()
+        +percentage()
+        +scale(document_size, viewport_size)
+        +for_selection(bounds, document_size, viewport_size)
+    }
+    class CachedPreviewImage {
+        -_image
+        +viewport(target_size, viewport_size, origin)
+    }
+    class PreviewPan {
+        -_pointer
+        -_origin
+        +moved_origin(pointer)
+    }
     class ApplicationMemory {
         -_values
         +optional(name, default)
@@ -121,6 +153,7 @@ classDiagram
     DocumentMixin <|-- EditorApp
     PreviewModelMixin <|-- EditorApp
     CanvasRendererMixin <|-- EditorApp
+    ZoomPreviewRendererMixin <|-- EditorApp
     LayoutMixin <|-- EditorApp
     CompositorMixin <|-- EditorApp
     ShapeRendererMixin <|-- EditorApp
@@ -132,18 +165,26 @@ classDiagram
     PreviewValuesMixin <|-- EditorApp
     AdbTransferMixin <|-- EditorApp
     TreeDragMixin <|-- EditorApp
+    PreviewZoomMixin <|-- EditorApp
 
     CompositorLeafMixin <|-- CompositorMixin
     ShapeGeometryMixin <|-- ShapeRendererMixin
     ShapeMaskMixin <|-- ShapeRendererMixin
     PreviewInteractionMixin <|-- InteractionMixin
     ResizeInteractionMixin <|-- InteractionMixin
+    PreviewPanMixin <|-- InteractionMixin
     ResizeInteractionMixin ..> ResizeHandleSet
     ResizeInteractionMixin ..> ResizeSession
     InteractionMixin ..> PositionMutation : drag
     ResizeInteractionMixin ..> PositionMutation : preserve opposite edge
     DocumentMixin ..> PositionMutation : duplicate shift
     CanvasRendererMixin ..> ResizeHandleSet : selection handles
+    CanvasRendererMixin ..> PreviewZoom : render scale
+    PreviewZoomMixin ..> PreviewZoom : edit view
+    ZoomPreviewRendererMixin ..> CachedPreviewImage : viewport transform
+    PreviewZoomMixin ..> ZoomPreviewRendererMixin : wheel feedback
+    PreviewPanMixin ..> PreviewPan : grabbed movement
+    PreviewPanMixin ..> ZoomPreviewRendererMixin : cached crop
 
     EditorApp *-- ApplicationMemory : memory
     BootstrapMixin ..> EditorWindowBuilder : builds
@@ -864,12 +905,16 @@ sequenceDiagram
 
 ### 3.7 図形・画像の直接リサイズ
 
-編集モードで選択したShapeまたはBitmapには8方向のハンドルを表示します。Shapeはドラッグした軸を個別に変更し、Bitmapはどのハンドルでも現在の縦横比を維持します。サイズ変更後は、ルート要素ならアンカー基準オフセット、レイヤー内の子要素なら四辺余白を補正し、ドラッグしていない反対側の縁を固定します。描画時に全モジュールの境界を記録するため、Overlap内の子要素も最前面から選択・リサイズできます。
+編集対象の選択元は左ペインの要素Treeviewだけです。プレビュー上でアイテムをクリックしても未選択状態から選択せず、別アイテムへも切り替えません。Treeviewで選択済みの要素内部をドラッグした場合だけ座標・余白を変更し、その要素のハンドルをドラッグした場合だけサイズを変更します。アイテムのない背景では拡大表示のパンへ移ります。
+
+編集モードで選択したShapeまたはBitmapには8方向のハンドルを表示します。Shapeはドラッグした軸を個別に変更し、Bitmapはどのハンドルでも現在の縦横比を維持します。サイズ変更後は、ルート要素ならアンカー基準オフセット、レイヤー内の子要素なら四辺余白を補正し、ドラッグしていない反対側の縁を固定します。描画時に全モジュールの境界を記録するため、Treeviewで選択したOverlap内の子要素も直接移動・リサイズできます。
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor User as 利用者
+    participant Tree as 要素Treeview
+    participant Memory as ApplicationMemory
     participant Canvas as CanvasRendererMixin
     participant Interaction as ResizeInteractionMixin
     participant Handles as ResizeHandleSet
@@ -878,9 +923,12 @@ sequenceDiagram
     participant Item as ShapeまたはBitmap
     participant History as HistoryTimeline
 
+    User->>Tree: 編集する要素を選択
+    Tree->>Memory: selectedを更新
     Canvas->>Handles: positions(selected_bounds)
     Handles-->>Canvas: 8方向のハンドル座標
     Canvas-->>User: 選択枠とハンドルを表示
+    Note over User,Canvas: Canvasクリックだけではselectedを変更しない
     User->>Interaction: 縁またはハンドルを押す
     Interaction->>Handles: hit(bounds, pointer, tolerance)
     Handles-->>Interaction: N・E・S・Wまたは四隅
@@ -1018,18 +1066,73 @@ sequenceDiagram
     Canvas-->>User: 切替後の背景を表示
 ```
 
+### 3.11 選択要素の編集ズームと背景パン
+
+編集表示のズームは100～400%のプレビュー専用状態です。「選択を拡大」は要素の境界が表示領域の約70%へ収まる倍率を計算し、その中心へクロップ位置を移動します。`−` / `＋` とCtrl+マウスホイールは段階的な倍率変更、「全体表示」は100%と原点へ復帰します。ホイール操作は変更前のポインタ位置を文書座標へ変換し、新しい倍率からクロップ原点を逆算することで、ポインタ下の内容を固定したまま拡縮します。WindowsのMouseWheel形式とButton-4/5形式の両方を受け付けます。
+
+ホイール操作中は、直前の高品質全体画像 `_quality_preview` を再利用します。`CachedPreviewImage` は現在のクロップ原点を元画像座標へ逆変換し、420×760以下の表示領域だけをBILINEARで変換します。全要素の再合成は行いません。高品質描画の予約は入力のたびに取り消して140ms後へ置き直すため、最後の入力後に一度だけ `CanvasRendererMixin._render()` が実行され、キャッシュと表示が高品質画像へ更新されます。ズーム倍率、クロップ原点、描画キャッシュ、予約IDは `ApplicationMemory` にだけ保持し、`.klwp` の位置・サイズ・画像には保存しません。
+
+ズーム中もヒットテスト、ドラッグ、リサイズ、タップ判定は文書座標で処理します。画面上のポインタ座標へクロップ原点を加え、描画倍率で割って文書座標へ戻すため、拡大表示がアイテムの保存値を歪めることはありません。
+
+編集モードで拡大中にアイテムのない背景部分を左ドラッグすると、`PreviewPan` がポインタ移動量と逆方向へクロップ原点を移し、背景をつかんで動かす表示になります。原点は描画領域内へ制限し、制限後の位置を次のドラッグ基準にするため、端から反対方向へ戻した時も即座に追従します。倍率と高品質キャッシュの解像度が一致する場合はキャッシュを直接cropし、全要素の再描画は行いません。操作プレビューモードでは従来のページスワイプを優先し、アイテム上では要素移動・リサイズを優先します。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Zoom as PreviewZoomMixin
+    participant Value as PreviewZoom
+    participant Memory as ApplicationMemory
+    participant Fast as ZoomPreviewRendererMixin
+    participant Cache as CachedPreviewImage
+    participant Pan as PreviewPanMixin
+    participant Canvas as CanvasRendererMixin
+    participant Interaction as InteractionMixin
+    participant Item as 選択要素
+
+    User->>Zoom: 選択を拡大
+    Zoom->>Item: boundsを取得
+    Zoom->>Value: for_selection(bounds, document, viewport)
+    Value-->>Zoom: 1.0～4.0の倍率
+    Zoom->>Memory: preview_zoomと_view_originを保存
+    Zoom->>Canvas: _render()
+    Canvas->>Value: scale(document, viewport)
+    Canvas->>Canvas: 全体を倍率描画して表示領域をcrop
+    Canvas-->>User: 選択要素を中心に拡大表示
+    User->>Zoom: Ctrl+マウスホイール
+    Zoom->>Memory: preview_zoomと_view_originを更新
+    Zoom->>Fast: _render_zoom_preview()
+    Fast->>Memory: 直前の_quality_previewを取得
+    Fast->>Cache: 表示領域だけをBILINEAR変換
+    Cache-->>Fast: 420x760以下の一時画像
+    Fast-->>User: ポインタ中心を維持して即時表示
+    Zoom->>Zoom: 既存予約を取消し140ms後へ再予約
+    Zoom->>Canvas: 入力停止後に_render()
+    Canvas->>Canvas: 全要素を高品質で一度だけ再合成
+    Canvas->>Memory: _quality_previewを更新
+    Canvas-->>User: 高品質表示へ差し替え
+    User->>Pan: 空いている背景を左ドラッグ
+    Pan->>Memory: _view_originをポインタと逆方向へ更新
+    Pan->>Fast: 高品質キャッシュの表示領域をcrop
+    Fast-->>User: 背景をつかんだ方向へ即時移動
+    User->>Interaction: ドラッグまたはリサイズ
+    Interaction->>Zoom: _document_point(event)
+    Zoom-->>Interaction: (event + crop origin) / scale
+    Interaction->>Item: 文書座標の値だけを更新
+```
+
 ## 4. 状態とデータの境界
 
 ### 4.1 `ApplicationMemory` の主な内容
 
 | 分類 | キーの例 | 保存対象 |
 | --- | --- | --- |
-| ドキュメント | `archive`, `device_res`, `selected` | `archive` の内容だけ `.klwp` に保存 |
+| ドキュメント | `archive`, `device_res` | `archive` の内容だけ `.klwp` に保存 |
 | 履歴 | `history`, `dirty` | 保存しない |
 | UI | `tree`, `canvas`, `status`, 各ボタン | 保存しない |
-| キャッシュ | `photo_cache`, `font_cache`, `_photo`, `_item_bounds` | 保存しない |
-| 編集操作 | `drag_state`, `resize_state`, `tree_drag` | 保存しない |
-| プレビュー | `preview_scroll`, `preview_switches`, `preview_switch_progress`, `preview_values`, `preview_ts` | 保存しない |
+| キャッシュ | `photo_cache`, `font_cache`, `_photo`, `_quality_preview`, `_item_bounds` | 保存しない |
+| 編集操作 | `selected`, `drag_state`, `resize_state`, `_view_pan_state`, `tree_drag` | 保存しない |
+| プレビュー | `preview_scroll`, `preview_switches`, `preview_switch_progress`, `preview_values`, `preview_ts`, `preview_zoom`, `_view_origin` | 保存しない |
 | アニメーション | `_switch_transitions`, `_scroll_transition`, `_loop_started_at` | 保存しない |
 | イベント | `_event_regions`, `interaction_drag` | 保存しない |
 
