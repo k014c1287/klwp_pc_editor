@@ -25,11 +25,12 @@ except ImportError:
 try:
     from PIL import (Image, ImageTk, ImageDraw, ImageFilter, ImageFont,
                      ImageChops, ImageEnhance, ImageOps)
-    from PIL.Image import Resampling
+    from PIL.Image import Resampling, Transform
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
     Resampling = None
+    Transform = None
 
 APP_TITLE = "KLWP Desktop Editor"
 KFILE_PREFIX = "kfile://org.kustom.provider/bitmaps/"
