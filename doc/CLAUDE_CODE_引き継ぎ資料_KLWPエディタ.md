@@ -33,14 +33,15 @@ BitmapModule/KomponentModule含む) と `S041.klwp` (要素198個, Stack/Shape�
 正として描画系を改修した。現在は次に対応済み。
 
 - BitmapModule（元画像の縦横比維持、`bitmap_width`、`bitmap_alpha`）
-- プレビュー選択枠の8方向ハンドルによるShape自由リサイズ、Bitmap縦横比固定リサイズ。描画時の境界記録によりOverlap内の子要素も選択可能
+- 左ペインの要素ツリーだけを選択元とし、プレビュー上のクリックによる未選択状態からの選択・別要素への切替を禁止。選択済み要素はプレビュー選択枠の8方向ハンドルによるShape自由リサイズ、Bitmap縦横比固定リサイズ、座標移動が可能。描画時の境界記録によりOverlap内の子要素も編集可能
+- 100～400%の編集プレビューズーム、選択要素への自動フォーカス、ポインタ中心のCtrl+ホイール拡縮、空き背景の左ドラッグによる表示領域パン、操作中のキャッシュ画像による軽量追従、停止140ms後の高品質描画、ズーム後のドラッグ・リサイズ座標変換
 - `internal_formulas` / `internal_globals` / `globals_list` のサンプル評価
 - 背景画像の固定指定、BITMAP型Global紐付け、Kode数式による時間帯別切替の編集・プレビュー
 - Overlapの全子要素wrap、StackのRIGHT/BOTTOMを含む整列
 - Shape/Textおよび時計グループの回転、TRIANGLE
 - `fx_shadow: OUTER`、`paint_stroke`、動的背景・色・幅・可視性
 - preset_infoの縦横比自動採用、v10旧配置の互換補正
-- GUIなしの `render_to_image()`、実機スクショとのMSE・PSNR・SSIM／差分ヒートマップ／品質ゲート、回帰・構造テスト（現在61テスト）
+- GUIなしの `render_to_image()`、実機スクショとのMSE・PSNR・SSIM／差分ヒートマップ／品質ゲート、回帰・構造テスト（現在74テスト）
 - Komponent倍率、線形／放射／Sweepグラデーション、主要blend mode
 - ROTATE/SCALE/色フィルターとease、編集可能なKodeプレビュー値
 - 全グローバル型・外部タップアクションの編集UI、adbワンクリック転送
@@ -189,7 +190,7 @@ klwp/values.py              … パス・文書サイズ・文字列・数値の
 klwp/formula.py             … Kodeトークン化・演算・関数評価
 klwp/svg.py                 … SVGトークン列・曲線・円弧・マスク
 klwp/resize.py              … リサイズハンドル判定・縦横比固定計算
-klwp/preview/               … ページ推定、日付/global、Switch、animation
+klwp/preview/               … ページ推定、日付/global、Switch、animation、zoom
 klwp/render/                … canvas、配置、合成、shape、text、content
 klwp/ui/                    … 起動、文書操作、プロパティ、各設定ダイアログ
 klwp/editor.py              … 上記Mixinを合成するEditorApp構成ルート
@@ -277,7 +278,7 @@ presetへ保存しない。ルート要素の `internal_animations` を合成し
 
 ## 6. テスト・検証方法
 
-- 全テスト: `python -m unittest -v`（機能60件＋構造1件）
+- 全テスト: `python -m unittest -v`（機能73件＋構造1件）
 - 構造規約のみ: `python tools/check_object_calisthenics.py`
 - 実機差分: `python tools/compare_preview.py --reference <screenshot.png> --preset <preset.klwp> --output artifacts/pixel_diff/<case>`。MSE・PSNR・グローバルSSIMとヒートマップを出力し、`--max-mse`・`--min-ssim`で終了コードによる品質ゲートを設定可能
 - Pillowヘッドレス描画: GUIを起動せず `render_to_image()` を呼び、全sampleを検証
