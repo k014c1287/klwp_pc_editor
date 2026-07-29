@@ -20,6 +20,10 @@ from klwp.ui.document import DocumentMixin
 from klwp.ui.window import EditorWindowBuilder
 from klwp.adb import AdbDevices, AdbTransfer
 from klwp.preview.pages import PresetPageCount, PreviewPageCounter
+from klwp.pixel_diff import (
+    ComparableImages, ComparisonRegion, PixelDiff, PixelDiffThresholds,
+    PresetPreview)
+from klwp.runtime import Resampling
 from klwp.preview.zoom import CachedPreviewImage, PreviewPan, PreviewZoom
 from klwp.ui.tree import ModuleTreePresentation
 from klwp.ui.tree_drag import TreeDragMixin, TreeReorder
@@ -74,6 +78,69 @@ class FormulaTests(unittest.TestCase):
         self.assertEqual(ke.eval_formula("$wi(temp)$", values), -3.0)
         self.assertEqual(ke.eval_formula("$mi(title)$", values), "Edited Song")
         self.assertEqual(ke.eval_formula("$li(loc)$", values), "Sapporo")
+
+
+@unittest.skipUnless(ke.HAS_PIL, "Pillow is required")
+class PixelDiffTests(unittest.TestCase):
+    def test_identical_images_have_perfect_metrics(self):
+        image = ke.Image.new("RGB", (8, 6), "#123456")
+
+        metrics = PixelDiff(ComparableImages(image, image)).measure()
+
+        self.assertEqual(metrics["mse"], 0.0)
+        self.assertIsNone(metrics["psnr"])
+        self.assertEqual(metrics["ssim"], 1.0)
+
+    def test_changed_images_write_metrics_and_heatmap(self):
+        reference = ke.Image.new("RGB", (8, 8), "#000000")
+        actual = reference.copy()
+        actual.paste("#FFFFFF", (0, 0, 4, 4))
+        comparison = PixelDiff(ComparableImages(reference, actual))
+
+        with tempfile.TemporaryDirectory() as directory:
+            metrics = comparison.write_report(directory, heat_gain=3.0)
+            output = Path(directory)
+            stored = json.loads(
+                (output / "metrics.json").read_text(encoding="utf-8"))
+            names = {
+                "reference.png", "actual.png", "heatmap.png", "metrics.json"}
+            self.assertEqual(
+                {path.name for path in output.iterdir()}, names)
+
+        self.assertEqual(stored, metrics)
+        self.assertGreater(metrics["mse"], 0.0)
+        self.assertLess(metrics["ssim"], 1.0)
+        failures = PixelDiffThresholds(0.0, 1.0).failures(metrics)
+        self.assertEqual(len(failures), 2)
+
+    def test_excluded_margin_does_not_affect_metrics(self):
+        reference = ke.Image.new("RGB", (6, 6), "#000000")
+        actual = reference.copy()
+        actual.paste("#FFFFFF", (0, 0, 6, 1))
+        images = ComparableImages(reference, actual)
+        cropped = images.cropped(ComparisonRegion(top=1))
+
+        metrics = PixelDiff(cropped).measure()
+
+        self.assertEqual(metrics["mse"], 0.0)
+        self.assertEqual(metrics["height"], 5)
+
+    def test_sizuka_reference_stays_within_regression_threshold(self):
+        preset = SAMPLES / "sizuka_home.klwp"
+        screenshot = SAMPLES / "Screenshot_20260720-022511.png"
+        if not preset.exists() or not screenshot.exists():
+            self.skipTest("local sizuka_home reference pair is unavailable")
+        timestamp = datetime(2026, 7, 20, 2, 25).timestamp() * 1000.0
+        reference = ke.Image.open(screenshot).convert("RGB")
+        normalized = reference.resize((108, 240), Resampling.LANCZOS)
+        actual = PresetPreview.load(preset, timestamp).render((108, 240))
+        images = ComparableImages(normalized, actual)
+        cropped = images.cropped(ComparisonRegion(top=5, bottom=5))
+
+        metrics = PixelDiff(cropped).measure()
+
+        failures = PixelDiffThresholds(6500.0, 0.1).failures(metrics)
+        self.assertEqual(failures, ())
 
 
 class ShapeTemplateTests(unittest.TestCase):
@@ -1277,6 +1344,31 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(renderer._hit_item(
             bounds[0] + bounds[2] / 2,
             bounds[1] + bounds[3] / 2), child)
+
+    def test_sizuka_shape_less_overlap_layers_wrap_all_children(self):
+        archive = ke.KlwpArchive()
+        archive.load(SAMPLES / "sizuka_home.klwp")
+        renderer = self.renderer(archive)
+        global_values = renderer._root_globals()
+        pending = list(archive.modules())
+        shape_less_layers = []
+        while pending:
+            item = pending.pop()
+            children = item.get("viewgroup_items", [])
+            pending.extend(children)
+            child_types = [child.get("internal_type") for child in children]
+            if item.get("internal_type") == "OverlapLayerModule" and \
+                    "ShapeModule" not in child_types:
+                shape_less_layers.append(item)
+
+        sizes = sorted(
+            renderer._layer_box_size(item, global_values)
+            for item in shape_less_layers)
+
+        self.assertEqual(
+            sizes, [(35.0, 35.0), (35.0, 35.0),
+                    (40.0, 40.0), (210.0, 40.0)])
+        self.assertNotIn((200.0, 120.0), sizes)
 
     def test_komponent_scale_applies_to_size_content_and_child_bounds(self):
         archive = ke.KlwpArchive()
