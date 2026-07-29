@@ -24,12 +24,13 @@ except ImportError:
 
 try:
     from PIL import (Image, ImageTk, ImageDraw, ImageFilter, ImageFont,
-                     ImageChops, ImageEnhance, ImageOps)
+                     ImageChops, ImageEnhance, ImageOps, ImageStat)
     from PIL.Image import Resampling, Transform
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
     Resampling = None
+    ImageStat = None
     Transform = None
 
 APP_TITLE = "KLWP Desktop Editor"
