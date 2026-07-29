@@ -9,6 +9,7 @@ klwp_editor.py          23行の起動・後方互換ファサード
 klwp/                   アプリケーション本体（責務別パッケージ）
   archive.py            .klwp ZIP/JSON境界
   background.py         背景画像の数式・Bitmap Global紐付け
+  pixel_diff.py         実機スクショとの画像差分・品質ゲート
   adb.py                Android端末検出・adb転送
   formula.py / svg.py   Kode評価 / SVGパス解析
   preview/              ページ・Switch・アニメーション・ズーム状態
@@ -16,7 +17,7 @@ klwp/                   アプリケーション本体（責務別パッケー�
   ui/                   ウィンドウ・各編集ダイアログ・操作
 test_klwp_editor.py     機能・描画回帰テスト
 test_architecture.py    リファクタリング規約の静的テスト
-tools/                  開発用規約チェッカー
+tools/                  開発用規約チェッカー・実機画像比較CLI
 README.md               利用方法（このファイル）
 doc/                    引き継ぎ資料・開発文書
   KLWPエディタ_設計仕様.md  Mermaidクラス図・シーケンス図
@@ -140,9 +141,25 @@ python -m unittest -v
 python tools/check_object_calisthenics.py
 ```
 
-sample内のKLWPについて、アーカイブ往復保存、画像ID・ZIP互換性、v1/v3/v4/v5/v10/v11/v15、Kode、Bitmap比率、数式・BITMAP Globalによる時間帯別背景、ページ数の保存・縮小時補正、全図形タイプ、グラデーション・blend、Komponent倍率、アンカー基準のオフセットと四辺余白、左ペイン選択限定の座標・サイズ編集、直接リサイズ、選択要素ズーム・Ctrl+ホイール・背景パン・軽量追従表示・停止後の高品質描画・ズーム後の座標変換、要素ツリーの選択解除・即時Delete削除・ドラッグ並べ替え、Ctrl+Z/Ctrl+Y、削除後のUndo、タップ、各種アニメーション、ADBコマンドを検証します。現在は機能69件とアーキテクチャ1件の計70テストです。
+sample内のKLWPについて、アーカイブ往復保存、画像ID・ZIP互換性、v1/v3/v4/v5/v10/v11/v15、Kode、Bitmap比率、数式・BITMAP Globalによる時間帯別背景、ページ数の保存・縮小時補正、全図形タイプ、グラデーション・blend、Komponent倍率、アンカー基準のオフセットと四辺余白、左ペイン選択限定の座標・サイズ編集、直接リサイズ、選択要素ズーム・Ctrl+ホイール・背景パン・軽量追従表示・停止後の高品質描画・ズーム後の座標変換、実機スクショとの差分指標・品質ゲート、要素ツリーの選択解除・即時Delete削除・ドラッグ並べ替え、Ctrl+Z/Ctrl+Y、削除後のUndo、タップ、各種アニメーション、ADBコマンドを検証します。現在は機能73件とアーキテクチャ1件の計74テストです。
 
 規約チェッカーは `klwp/` と `tools/` を対象に、`else` 禁止、メソッド内ネスト1段、1メソッド30行以内、1クラス250行以内、1クラスのインスタンス変数2個以内、property/getter/setterデコレータ禁止、二段以上のメッセージ連鎖禁止を検証します。Tkinter・Pillow・JSONへ渡す生の値は境界に限定し、アプリ内部の状態は値オブジェクトとファーストクラスコレクションで扱います。
+
+### 実機スクショとのピクセル差分
+
+`tools/compare_preview.py` は、実機スクショとKLWPプリセットのPC描画、または任意の2画像を比較します。`reference.png`、`actual.png`、`heatmap.png`、`metrics.json`を指定ディレクトリへ出力します。指標はRGBのMSE・PSNRとグレースケールのグローバルSSIMです。
+
+```powershell
+python tools/compare_preview.py `
+  --reference sample/Screenshot_20260720-022511.png `
+  --preset sample/sizuka_home.klwp `
+  --timestamp 2026-07-20T02:25:00+09:00 `
+  --width 108 --ignore-top 5 --ignore-bottom 5 `
+  --max-mse 6500 --min-ssim 0.1 `
+  --output artifacts/pixel_diff/sizuka_home
+```
+
+`--width`を省略すると正解画像の実解像度で比較します。`--ignore-*`はAndroidのステータスバー、ナビゲーションバーなど比較対象外の余白です。`--max-mse`または`--min-ssim`を満たさない場合は終了コード1を返すため、回帰テストやCIの品質ゲートとして使用できます。`--preset`の代わりに`--actual PC描画.png`も指定できます。生成物の`artifacts/`はGit管理対象外です。
 
 ## 8. 開発用ブランチ命名規則
 
