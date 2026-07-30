@@ -9,6 +9,7 @@ klwp_editor.py          23行の起動・後方互換ファサード
 klwp/                   アプリケーション本体（責務別パッケージ）
   archive.py            .klwp ZIP/JSON境界
   background.py         背景画像の数式・Bitmap Global紐付け
+  pixel_diff.py         実機スクショとの画像差分・品質ゲート
   adb.py                Android端末検出・adb転送
   formula.py / svg.py   Kode評価 / SVGパス解析
   preview/              ページ・Switch・アニメーション・ズーム状態
@@ -16,7 +17,7 @@ klwp/                   アプリケーション本体（責務別パッケー�
   ui/                   ウィンドウ・各編集ダイアログ・操作
 test_klwp_editor.py     機能・描画回帰テスト
 test_architecture.py    リファクタリング規約の静的テスト
-tools/                  開発用規約チェッカー
+tools/                  開発用規約チェッカー・実機画像比較CLI
 README.md               利用方法（このファイル）
 doc/                    引き継ぎ資料・開発文書
   KLWPエディタ_設計仕様.md  Mermaidクラス図・シーケンス図
@@ -52,11 +53,12 @@ pyinstaller --onefile --windowed klwp_editor.py
 | ツールバー | 新規 / 開く / 保存、Android転送、元に戻す / やり直す、要素追加、複製・削除・前面／背面移動、背景・画像・グローバル・プレビュー値管理 |
 | 左ペイン | 要素ツリー。種類と前面順を表示し、同じレイヤー内の要素をドラッグして表示優先度を変更できます。「選択解除（ルート）」またはツリーの空白クリックで追加先をルートへ戻せます |
 | 中央 | プレビュー。左ペインで選択済みの要素だけをドラッグで移動し、図形・画像の縁やハンドルからサイズ変更できます。プレビュー上のクリックでは選択対象は変わりません。編集表示からズームでき、「総数…」から壁紙のページ数を変更できます |
-| 右ペイン | 選択要素のプロパティ（名前・アンカー・オフセット／四辺余白・サイズ・色・フォント等）。アンカーは9方向の日本語プルダウン、色はカラーピッカー、FontIconは検索可能なグリッドで編集可能 |
+| 右ペイン | 選択要素のプロパティ（名前・アンカー・オフセット／四辺余白・サイズ・色・フォント等）、Kodeライブ編集、FontIcon検索グリッド。アンカーは9方向の日本語プルダウン、色はカラーピッカーで編集可能 |
 
 - 色はカラーピッカー、色見本、不透明度（0–100%）で直感的に指定できます。KLWP形式 `#AARRGGBB` の直接入力も使用できます
 - Undoは `Ctrl+Z`、Redoは `Ctrl+Y` または `Ctrl+Shift+Z` で実行できます（最大50操作）
-- 「詳細（JSON を直接編集）」で、プロパティ欄にない設定（アニメーション、タッチアクション、数式 `internal_formulas` 等）もすべて編集できます
+- 「Kode 数式をライブ編集」で `text_expression` と任意の `internal_formulas.プロパティ名` を選択し、関数候補の挿入、構文チェック、現在のプレビュー値による評価を確認しながら編集できます
+- 「詳細（JSON を直接編集）」で、プロパティ欄にない設定もすべて編集できます
 - 「画像管理」で内蔵画像の一覧・プレビュー・差し替えができます（● は使用中）
 - 「背景設定」で固定画像に加え、BITMAP型Globalの選択、背景用画像Globalの追加、`background_bitmap` のKode数式を編集できます
 - 「グローバル管理」はルートGlobalを編集します。ローカルGlobalを持つKomponentでは、右ペインに専用ボタンも表示されます
@@ -141,9 +143,25 @@ python -m unittest -v
 python tools/check_object_calisthenics.py
 ```
 
-sample内のKLWPについて、アーカイブ往復保存、画像ID・ZIP互換性、v1/v3/v4/v5/v10/v11/v15、Kode、Bitmap比率、FontIconピッカーと内蔵SVG、数式・BITMAP Globalによる時間帯別背景、ページ数の保存・縮小時補正、全図形タイプ、グラデーション・blend、Komponent倍率、アンカー基準のオフセットと四辺余白、左ペイン選択限定の座標・サイズ編集、直接リサイズ、選択要素ズーム・Ctrl+ホイール・背景パン・軽量追従表示・停止後の高品質描画・ズーム後の座標変換、要素ツリーの選択解除・即時Delete削除・ドラッグ並べ替え、Ctrl+Z/Ctrl+Y、削除後のUndo、タップ、各種アニメーション、ADBコマンドを検証します。現在は機能72件とアーキテクチャ1件の計73テストです。
+sample内のKLWPについて、アーカイブ往復保存、画像ID・ZIP互換性、v1/v3/v4/v5/v10/v11/v15、Kode評価・ライブ編集、Bitmap比率、FontIconピッカーと内蔵SVG、数式・BITMAP Globalによる時間帯別背景、ページ数の保存・縮小時補正、全図形タイプ、グラデーション・blend、Komponent倍率、Shapeを直接持たないOverlapLayerを含む全子要素wrap、アンカー基準のオフセットと四辺余白、左ペイン選択限定の座標・サイズ編集、直接リサイズ、選択要素ズーム・Ctrl+ホイール・背景パン・軽量追従表示・停止後の高品質描画・ズーム後の座標変換、実機スクショとの差分指標・品質ゲート、時計時刻のレイヤー内包・日付と天気の非重複、要素ツリーの選択解除・即時Delete削除・ドラッグ並べ替え、Ctrl+Z/Ctrl+Y、削除後のUndo、タップ、各種アニメーション、ADBコマンドを検証します。現在は機能81件とアーキテクチャ1件の計82テストです。
 
 規約チェッカーは `klwp/` と `tools/` を対象に、`else` 禁止、メソッド内ネスト1段、1メソッド30行以内、1クラス250行以内、1クラスのインスタンス変数2個以内、property/getter/setterデコレータ禁止、二段以上のメッセージ連鎖禁止を検証します。Tkinter・Pillow・JSONへ渡す生の値は境界に限定し、アプリ内部の状態は値オブジェクトとファーストクラスコレクションで扱います。
+
+### 実機スクショとのピクセル差分
+
+`tools/compare_preview.py` は、実機スクショとKLWPプリセットのPC描画、または任意の2画像を比較します。`reference.png`、`actual.png`、`heatmap.png`、`metrics.json`を指定ディレクトリへ出力します。指標はRGBのMSE・PSNRとグレースケールのグローバルSSIMです。
+
+```powershell
+python tools/compare_preview.py `
+  --reference sample/Screenshot_20260720-022511.png `
+  --preset sample/sizuka_home.klwp `
+  --timestamp 2026-07-20T02:25:00+09:00 `
+  --width 108 --ignore-top 5 --ignore-bottom 5 `
+  --max-mse 6500 --min-ssim 0.1 `
+  --output artifacts/pixel_diff/sizuka_home
+```
+
+`--width`を省略すると正解画像の実解像度で比較します。`--ignore-*`はAndroidのステータスバー、ナビゲーションバーなど比較対象外の余白です。`--max-mse`または`--min-ssim`を満たさない場合は終了コード1を返すため、回帰テストやCIの品質ゲートとして使用できます。`--preset`の代わりに`--actual PC描画.png`も指定できます。生成物の`artifacts/`はGit管理対象外です。
 
 ## 8. 開発用ブランチ命名規則
 

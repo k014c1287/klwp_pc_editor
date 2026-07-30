@@ -18,10 +18,17 @@ from klwp.icons import IconCatalog, MATERIAL_ICON_SET
 from klwp.svg import decode_kustom_icon
 from klwp.ui.global_dialog import GlobalEntryValues
 from klwp.ui.setting_values import TouchActionValues
+from klwp.ui.kode_dialog import (
+    KodeInspector, KodeSyntax, KodeTargetCollection,
+)
 from klwp.ui.document import DocumentMixin
 from klwp.ui.window import EditorWindowBuilder
 from klwp.adb import AdbDevices, AdbTransfer
 from klwp.preview.pages import PresetPageCount, PreviewPageCounter
+from klwp.pixel_diff import (
+    ComparableImages, ComparisonRegion, PixelDiff, PixelDiffThresholds,
+    PresetPreview)
+from klwp.runtime import Resampling
 from klwp.preview.zoom import CachedPreviewImage, PreviewPan, PreviewZoom
 from klwp.ui.tree import ModuleTreePresentation
 from klwp.ui.tree_drag import TreeDragMixin, TreeReorder
@@ -76,6 +83,103 @@ class FormulaTests(unittest.TestCase):
         self.assertEqual(ke.eval_formula("$wi(temp)$", values), -3.0)
         self.assertEqual(ke.eval_formula("$mi(title)$", values), "Edited Song")
         self.assertEqual(ke.eval_formula("$li(loc)$", values), "Sapporo")
+
+    def test_kode_live_editor_reports_structural_errors(self):
+        self.assertEqual(KodeSyntax.problem("$if(1, yes, no)$"), "")
+        self.assertIn("$", KodeSyntax.problem("$if(1, yes, no)"))
+        self.assertIn("括弧", KodeSyntax.problem("$if(1, yes, no$"))
+        self.assertIn("引用符", KodeSyntax.problem('$tc(up, "abc)$'))
+
+    def test_kode_live_editor_evaluates_current_preview_values(self):
+        values = {"__preview__": {"weather": {"temp": -8.5}}}
+
+        inspection = KodeInspector(
+            "気温 $wi(temp)$°C", values).inspect()
+
+        self.assertTrue(inspection["valid"])
+        self.assertEqual(inspection["status"], "構文OK")
+        self.assertEqual(inspection["preview"], "気温 -8.5°C")
+
+    def test_kode_targets_preserve_unrelated_internal_formulas(self):
+        item = {
+            "internal_type": "TextModule",
+            "text_expression": "$df(HH:mm)$",
+            "internal_formulas": {"paint_color": "$gv(color)$"},
+        }
+        targets = KodeTargetCollection(item)
+
+        targets.apply("internal_formulas.text_size", "$gv(size)$")
+        targets.apply("text_expression", "$mi(title)$")
+
+        self.assertIn("text_expression", targets.names())
+        self.assertEqual(item["text_expression"], "$mi(title)$")
+        self.assertEqual(
+            item["internal_formulas"]["paint_color"], "$gv(color)$")
+        self.assertEqual(
+            item["internal_formulas"]["text_size"], "$gv(size)$")
+
+
+@unittest.skipUnless(ke.HAS_PIL, "Pillow is required")
+class PixelDiffTests(unittest.TestCase):
+    def test_identical_images_have_perfect_metrics(self):
+        image = ke.Image.new("RGB", (8, 6), "#123456")
+
+        metrics = PixelDiff(ComparableImages(image, image)).measure()
+
+        self.assertEqual(metrics["mse"], 0.0)
+        self.assertIsNone(metrics["psnr"])
+        self.assertEqual(metrics["ssim"], 1.0)
+
+    def test_changed_images_write_metrics_and_heatmap(self):
+        reference = ke.Image.new("RGB", (8, 8), "#000000")
+        actual = reference.copy()
+        actual.paste("#FFFFFF", (0, 0, 4, 4))
+        comparison = PixelDiff(ComparableImages(reference, actual))
+
+        with tempfile.TemporaryDirectory() as directory:
+            metrics = comparison.write_report(directory, heat_gain=3.0)
+            output = Path(directory)
+            stored = json.loads(
+                (output / "metrics.json").read_text(encoding="utf-8"))
+            names = {
+                "reference.png", "actual.png", "heatmap.png", "metrics.json"}
+            self.assertEqual(
+                {path.name for path in output.iterdir()}, names)
+
+        self.assertEqual(stored, metrics)
+        self.assertGreater(metrics["mse"], 0.0)
+        self.assertLess(metrics["ssim"], 1.0)
+        failures = PixelDiffThresholds(0.0, 1.0).failures(metrics)
+        self.assertEqual(len(failures), 2)
+
+    def test_excluded_margin_does_not_affect_metrics(self):
+        reference = ke.Image.new("RGB", (6, 6), "#000000")
+        actual = reference.copy()
+        actual.paste("#FFFFFF", (0, 0, 6, 1))
+        images = ComparableImages(reference, actual)
+        cropped = images.cropped(ComparisonRegion(top=1))
+
+        metrics = PixelDiff(cropped).measure()
+
+        self.assertEqual(metrics["mse"], 0.0)
+        self.assertEqual(metrics["height"], 5)
+
+    def test_sizuka_reference_stays_within_regression_threshold(self):
+        preset = SAMPLES / "sizuka_home.klwp"
+        screenshot = SAMPLES / "Screenshot_20260720-022511.png"
+        if not preset.exists() or not screenshot.exists():
+            self.skipTest("local sizuka_home reference pair is unavailable")
+        timestamp = datetime(2026, 7, 20, 2, 25).timestamp() * 1000.0
+        reference = ke.Image.open(screenshot).convert("RGB")
+        normalized = reference.resize((108, 240), Resampling.LANCZOS)
+        actual = PresetPreview.load(preset, timestamp).render((108, 240))
+        images = ComparableImages(normalized, actual)
+        cropped = images.cropped(ComparisonRegion(top=5, bottom=5))
+
+        metrics = PixelDiff(cropped).measure()
+
+        failures = PixelDiffThresholds(6500.0, 0.1).failures(metrics)
+        self.assertEqual(failures, ())
 
 
 class ShapeTemplateTests(unittest.TestCase):
@@ -1025,6 +1129,32 @@ class RenderTests(unittest.TestCase):
              for item in page_groups],
             [0.5, 0.5, 0.0])
 
+    def test_sizuka_clock_and_weather_text_bounds_do_not_overlap(self):
+        archive = ke.KlwpArchive()
+        archive.load(SAMPLES / "sizuka_home.klwp")
+        renderer = self.renderer(archive)
+        timestamp = datetime(2026, 7, 22, 11, 0).timestamp() * 1000.0
+        renderer.memory["preview_ts"] = timestamp
+        renderer.render_to_image(342, 760)
+        clock = archive.modules()[1]
+        weather = archive.modules()[4]
+        clock_items = clock["viewgroup_items"]
+        weather_items = weather["viewgroup_items"]
+        hour_bounds = renderer._recorded_bounds(clock_items[3])
+        date_bounds = renderer._recorded_bounds(clock_items[7])
+        temperature_bounds = renderer._recorded_bounds(weather_items[3])
+        clock_bounds = renderer._bounds(clock)
+        clock_top = clock_bounds[1]
+        clock_bottom = clock_top + clock_bounds[3]
+        hour_top = hour_bounds[1]
+        hour_bottom = hour_top + hour_bounds[3]
+        date_bottom = date_bounds[1] + date_bounds[3]
+        temperature_top = temperature_bounds[1]
+
+        self.assertGreaterEqual(hour_top, clock_top)
+        self.assertLessEqual(hour_bottom, clock_bottom)
+        self.assertLess(date_bottom, temperature_top)
+
     def test_formula_backed_bitmap_global_switches_background_by_hour(self):
         archive = ke.KlwpArchive()
         archive.load(SAMPLES / "sizuka_home.klwp")
@@ -1305,6 +1435,31 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(renderer._hit_item(
             bounds[0] + bounds[2] / 2,
             bounds[1] + bounds[3] / 2), child)
+
+    def test_sizuka_shape_less_overlap_layers_wrap_all_children(self):
+        archive = ke.KlwpArchive()
+        archive.load(SAMPLES / "sizuka_home.klwp")
+        renderer = self.renderer(archive)
+        global_values = renderer._root_globals()
+        pending = list(archive.modules())
+        shape_less_layers = []
+        while pending:
+            item = pending.pop()
+            children = item.get("viewgroup_items", [])
+            pending.extend(children)
+            child_types = [child.get("internal_type") for child in children]
+            if item.get("internal_type") == "OverlapLayerModule" and \
+                    "ShapeModule" not in child_types:
+                shape_less_layers.append(item)
+
+        sizes = sorted(
+            renderer._layer_box_size(item, global_values)
+            for item in shape_less_layers)
+
+        self.assertEqual(
+            sizes, [(35.0, 35.0), (35.0, 35.0),
+                    (40.0, 40.0), (210.0, 40.0)])
+        self.assertNotIn((200.0, 120.0), sizes)
 
     def test_komponent_scale_applies_to_size_content_and_child_bounds(self):
         archive = ke.KlwpArchive()

@@ -3,6 +3,7 @@
 from ..shared import *  # noqa: F401,F403
 from .color_control import ColorControl
 from .icon_picker import IconPickerDialog
+from .kode_dialog import KodeEditorDialog
 
 
 class AnchorChoices:
@@ -271,6 +272,8 @@ class PropertyPanelBuilder:
         ttk.Label(
             frame, text=f"アニメーション {animation_count}件 / タップ {event_count}件"
         ).pack(anchor="w", pady=(0, 4))
+        command = lambda: KodeEditorDialog(owner, item).show()
+        self._interaction_button(frame, "Kode 数式をライブ編集", command)
         self._interaction_button(frame, "アニメーション設定", owner._edit_animations)
         self._interaction_button(frame, "タップイベント設定", owner._edit_tap_events)
         self._interaction_button(frame, "グローバル変数管理", owner._edit_globals)
