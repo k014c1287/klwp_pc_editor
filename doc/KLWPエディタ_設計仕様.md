@@ -174,6 +174,19 @@ classDiagram
         -_owner
         +build()
     }
+    class EditorCommandCatalog {
+        -_owner
+        +menu_groups()
+        +toolbar_items()
+    }
+    class EditorMenuBuilder {
+        -_owner
+        +build()
+    }
+    class PrimaryToolbarBuilder {
+        -_owner
+        +build()
+    }
 
     TkRoot <|-- EditorApp
     BootstrapMixin <|-- EditorApp
@@ -222,6 +235,10 @@ classDiagram
 
     EditorApp *-- ApplicationMemory : memory
     BootstrapMixin ..> EditorWindowBuilder : builds
+    EditorWindowBuilder ..> EditorMenuBuilder : menu
+    EditorWindowBuilder ..> PrimaryToolbarBuilder : frequent actions
+    EditorMenuBuilder ..> EditorCommandCatalog
+    PrimaryToolbarBuilder ..> EditorCommandCatalog
 ```
 
 ### 2.2 KLWPアーカイブ、値、履歴
@@ -572,6 +589,16 @@ classDiagram
     class EditorWindowBuilder {
         +build()
     }
+    class EditorCommandCatalog {
+        +menu_groups()
+        +toolbar_items()
+    }
+    class EditorMenuBuilder {
+        +build()
+    }
+    class PrimaryToolbarBuilder {
+        +build()
+    }
     class ModuleTreeBuilder {
         +build()
     }
@@ -705,6 +732,10 @@ classDiagram
     }
 
     EditorApp ..> EditorWindowBuilder : startup
+    EditorWindowBuilder ..> EditorMenuBuilder : native menu
+    EditorWindowBuilder ..> PrimaryToolbarBuilder : compact toolbar
+    EditorMenuBuilder ..> EditorCommandCatalog : all toolbar commands
+    PrimaryToolbarBuilder ..> EditorCommandCatalog : frequent commands
     EditorApp ..> ModuleTreeBuilder : refresh tree
     ModuleTreeBuilder ..> ModuleTreePresentation : row values
     EditorApp ..> TreeDragMixin : layer ordering
@@ -1457,6 +1488,33 @@ sequenceDiagram
     Drag->>History: record(snapshot)
 ```
 
+### 3.18 メニューバーと常用ツールバー
+
+従来ツールバーにあった全コマンドの恒久的な入口はネイティブメニューバーとし、「ファイル」「編集」「追加」「配置」「プロジェクト」「デバイス」の6分類へ整理します。ツールバーは新規・開く・保存、Undo・Redo、追加プルダウン、コピー・貼付・複製・削除、Android転送の11操作だけを表示します。テキスト・図形・アイコン・画像・レイヤーの追加は1個の `ttk.Menubutton` に集約します。
+
+`EditorCommandCatalog` がメニューとツールバーのラベル・コマンド対応を提供し、`EditorMenuBuilder` と `PrimaryToolbarBuilder` が表示方式だけを担当します。既存のコマンドメソッド、Undo・Redoボタン参照、キーボードショートカットは変更しません。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Bootstrap as BootstrapMixin
+    participant Window as EditorWindowBuilder
+    participant Catalog as EditorCommandCatalog
+    participant Menu as EditorMenuBuilder
+    participant Toolbar as PrimaryToolbarBuilder
+    participant Memory as ApplicationMemory
+
+    Bootstrap->>Window: build()
+    Window->>Menu: build()
+    Menu->>Catalog: menu_groups()
+    Catalog-->>Menu: 6分類と全コマンド
+    Menu->>Memory: menu_barを保持
+    Window->>Toolbar: build()
+    Toolbar->>Catalog: toolbar_items()
+    Catalog-->>Toolbar: 常用11操作と追加メニュー
+    Toolbar->>Memory: primary_toolbar・履歴ボタンを保持
+```
+
 ## 4. 状態とデータの境界
 
 ### 4.1 `ApplicationMemory` の主な内容
@@ -1465,7 +1523,7 @@ sequenceDiagram
 | --- | --- | --- |
 | ドキュメント | `archive`, `device_res` | `archive` の内容だけ `.klwp` に保存 |
 | 履歴 | `history`, `dirty` | 保存しない |
-| UI | `tree`, `canvas`, `status`, 各ボタン | 保存しない |
+| UI | `menu_bar`, `primary_toolbar`, `tree`, `canvas`, `status`, 各ボタン | 保存しない |
 | キャッシュ | `photo_cache`, `font_cache`, `_photo`, `_quality_preview`, `_item_bounds` | 保存しない |
 | 編集操作 | `selected`, `selected_items`, `drag_state`, `resize_state`, `_view_pan_state`, `tree_drag`, `module_clipboard` | 保存しない |
 | プレビュー | `preview_scroll`, `preview_switches`, `preview_switch_progress`, `preview_values`, `preview_ts`, `preview_zoom`, `_view_origin`, `snap_guides` | 保存しない |
