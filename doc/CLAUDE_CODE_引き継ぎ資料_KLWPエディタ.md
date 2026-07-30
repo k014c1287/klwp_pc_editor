@@ -41,13 +41,13 @@ BitmapModule/KomponentModule含む) と `S041.klwp` (要素198個, Stack/Shape�
 - Shape/Textおよび時計グループの回転、TRIANGLE
 - `fx_shadow: OUTER`、`paint_stroke`、動的背景・色・幅・可視性
 - preset_infoの縦横比自動採用、v10旧配置の互換補正
-- GUIなしの `render_to_image()`、実機スクショとのMSE・PSNR・SSIM／差分ヒートマップ／品質ゲート、回帰・構造テスト（現在90テスト）
+- GUIなしの `render_to_image()`、実機スクショとのMSE・PSNR・SSIM／差分ヒートマップ／品質ゲート、回帰・構造テスト（現在92テスト）
 - Komponent倍率、線形／放射／Sweepグラデーション、主要blend mode
 - ROTATE/SCALE/色フィルターとease、編集可能なKodeプレビュー値
 - 全グローバル型・外部タップアクションの編集UI、adbワンクリック転送
 - FontIconの検索グリッド選択とKLWP互換の内蔵SVGエンコード
 - Kodeライブエディタ（対象フィールド選択・関数候補・構文診断・即時評価）
-- Switch専用管理画面を全型対応Global管理へ統合。ツールバーはルートGlobal、Komponent選択時の右ペインはローカルGlobalを別ボタンで編集
+- Switch専用管理画面を全型対応Global管理へ統合。メニューの「プロジェクト」はルートGlobal、Komponent選択時の右ペインはローカルGlobalを別ボタンで編集
 - 要素ツリーの種類・前面順表示、選択解除によるルート追加先への復帰、同一レイヤー内ドラッグ並べ替え
 - Ctrl+Z/Ctrl+YによるUndo/Redoと、要素ツリーの確認なしDelete削除・Undo復元
 - Ctrl/Shift複数選択、要素と依存アセットのファイル間コピー、一括複製・
@@ -55,6 +55,8 @@ BitmapModule/KomponentModule含む) と `S041.klwp` (要素198個, Stack/Shape�
 - 総ページ数の編集・Undo/Redo・`preset_info.xscreens` 保存と、縮小時のプレビュー位置補正
 - 100単位ルーラー、キャンバス／他要素の端・中心へのドラッグ吸着、
   一時整列ガイド（プレビュー専用で成果物には保存しない）
+- 従来ツールバーの全操作を6分類で保持するメニューバーと、常用11操作に絞ったツールバー。
+  追加5種はツールバーのプルダウンへ集約
 
 以降に残る「Bitmap/数式/影/回転が未実装」という記述は改修前の履歴であり、
 上記が現行状態。未対応なのは主に公式Kode全関数、新Shader、Android固有の
@@ -242,7 +244,7 @@ presetへ保存しない。ルート要素の `internal_animations` を合成し
 
 ## 5. プレビューの既知の近似・制限
 
-- 数式の端末値はツールバーの「プレビュー値」で編集できる模擬値。
+- 数式の端末値はメニューの「プロジェクト」→「プレビュー値」で編集できる模擬値。
   `internal_formulas` / globalsとsample内の全関数を評価するが公式Kode全構文ではない
 - OUTERグロー、線形／放射／Sweepグラデーション、主要blend modeは対応済み。
   AndroidのSkiaとPillowの画素差は残る
@@ -284,7 +286,7 @@ presetへ保存しない。ルート要素の `internal_animations` を合成し
 
 ## 6. テスト・検証方法
 
-- 全テスト: `python -m unittest -v`（機能89件＋構造1件）
+- 全テスト: `python -m unittest -v`（機能91件＋構造1件）
 - 構造規約のみ: `python tools/check_object_calisthenics.py`
 - 実機差分: `python tools/compare_preview.py --reference <screenshot.png> --preset <preset.klwp> --output artifacts/pixel_diff/<case>`。MSE・PSNR・グローバルSSIMとヒートマップを出力し、`--max-mse`・`--min-ssim`で終了コードによる品質ゲートを設定可能
 - Pillowヘッドレス描画: GUIを起動せず `render_to_image()` を呼び、全sampleを検証
@@ -326,6 +328,8 @@ presetへ保存しない。ルート要素の `internal_animations` を合成し
     OverlapLayerグループ化／解除（画面座標を維持）
 16. 完了: キャンバスの100単位ルーラー、要素・キャンバスの端／中心への
     7pxスナップ、ドラッグ中の整列ガイド
+17. 完了: 従来ツールバーの全操作を6分類で保持するネイティブメニューバーと、常用11操作・
+    追加プルダウンに絞り初期1280px幅へ収めたツールバー
 
 ## 7.1 次の優先タスク候補 (2026-07-25 整理)
 

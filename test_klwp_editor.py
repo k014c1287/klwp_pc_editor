@@ -25,6 +25,7 @@ from klwp.ui.kode_dialog import (
 from klwp.ui.document import DocumentMixin
 from klwp.ui.multi_selection import MultiSelectionMixin
 from klwp.ui.grouping import GroupingMixin
+from klwp.ui.menu_toolbar import EditorCommandCatalog
 from klwp.ui.window import EditorWindowBuilder
 from klwp.adb import AdbDevices, AdbTransfer
 from klwp.preview.pages import PresetPageCount, PreviewPageCounter
@@ -538,6 +539,37 @@ class ModuleTreeTests(unittest.TestCase):
         self.assertEqual(archive.modules(), [])
         editor._mark_dirty.assert_called_once_with()
         editor._refresh_all.assert_called_once_with()
+
+
+class MenuToolbarTests(unittest.TestCase):
+    def test_menu_groups_keep_every_toolbar_command_available(self):
+        groups = EditorCommandCatalog(Mock()).menu_groups()
+        actual = {
+            group: tuple(item[0] for item in entries if item[0])
+            for group, entries in groups
+        }
+
+        self.assertEqual(actual, {
+            "ファイル": ("新規", "開く", "保存", "名前を付けて保存"),
+            "編集": ("元に戻す", "やり直す", "コピー", "貼付", "複製", "削除"),
+            "追加": ("テキスト", "図形", "アイコン", "画像", "レイヤー"),
+            "配置": ("グループ化", "グループ解除", "背面へ", "前面へ"),
+            "プロジェクト": (
+                "グローバル管理", "プレビュー値",
+                "背景設定", "画像管理", "端末解像度"),
+            "デバイス": ("Androidへ転送",),
+        })
+
+    def test_primary_toolbar_contains_only_frequent_actions(self):
+        items = EditorCommandCatalog(Mock()).toolbar_items()
+        labels = tuple(
+            item[1] for item in items if item[0] != "separator")
+
+        self.assertEqual(labels, (
+            "新規", "開く", "保存", "元に戻す", "やり直す", "＋追加",
+            "コピー", "貼付", "複製", "削除", "Androidへ転送"))
+        self.assertEqual(
+            sum(item[0] == "separator" for item in items), 4)
 
 
 class KeyboardShortcutTests(unittest.TestCase):

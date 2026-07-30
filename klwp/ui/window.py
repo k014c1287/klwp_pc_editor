@@ -1,6 +1,7 @@
 """Construct the Tk widgets owned by the main editor window."""
 
 from ..shared import *  # noqa: F401,F403
+from .menu_toolbar import EditorMenuBuilder, PrimaryToolbarBuilder
 
 
 class EditorWindowBuilder:
@@ -8,66 +9,14 @@ class EditorWindowBuilder:
         self._owner = owner
 
     def build(self):
-        self._toolbar()
+        EditorMenuBuilder(self._owner).build()
+        PrimaryToolbarBuilder(self._owner).build()
         self._keyboard_shortcuts()
         body = ttk.PanedWindow(self._owner, orient="horizontal")
         body.pack(fill="both", expand=True)
         self._module_tree(body)
         self._preview(body)
         self._property_panel(body)
-
-    def _toolbar(self):
-        toolbar = ttk.Frame(self._owner)
-        toolbar.pack(side="top", fill="x", padx=4, pady=4)
-        for label, command in self._toolbar_commands():
-            self._toolbar_item(toolbar, label, command)
-
-    def _toolbar_commands(self):
-        owner = self._owner
-        return [
-            ("Androidへ転送", owner.cmd_adb_transfer),
-            ("グローバル管理", owner._edit_globals),
-            ("プレビュー値", owner._edit_preview_values),
-            ("新規", owner.cmd_new), ("開く", owner.cmd_open),
-            ("保存", owner.cmd_save), ("名前を付けて保存", owner.cmd_save_as),
-            ("｜", None),
-            ("元に戻す", owner.cmd_undo), ("やり直す", owner.cmd_redo),
-            ("｜", None),
-            ("＋テキスト", lambda: owner.cmd_add("text")),
-            ("＋図形", owner.cmd_add_shape),
-            ("＋アイコン", lambda: owner.cmd_add("icon")),
-            ("＋画像", lambda: owner.cmd_add("bitmap")),
-            ("＋レイヤー", lambda: owner.cmd_add("layer")),
-            ("｜", None),
-            ("コピー", owner.cmd_copy), ("貼付", owner.cmd_paste),
-            ("複製", owner.cmd_duplicate), ("削除", owner.cmd_delete),
-            ("グループ化", owner.cmd_group_selection),
-            ("解除", owner.cmd_ungroup_selection),
-            ("背面へ", lambda: owner.cmd_move(-1)),
-            ("前面へ", lambda: owner.cmd_move(1)),
-            ("｜", None),
-            ("背景設定", owner.cmd_background),
-            ("画像管理", owner.cmd_images),
-            ("端末解像度", owner.cmd_device_res),
-        ]
-
-    def _toolbar_item(self, toolbar, label, command):
-        if command is None:
-            separator = ttk.Separator(toolbar, orient="vertical")
-            separator.pack(side="left", fill="y", padx=6)
-            return
-        button = ttk.Button(toolbar, text=label, command=command)
-        button.pack(side="left", padx=2)
-        self._remember_history_button(label, button)
-
-    def _remember_history_button(self, label, button):
-        owner = self._owner
-        memory = owner.memory
-        if label == "元に戻す":
-            memory['undo_button'] = button
-            return
-        if label == "やり直す":
-            memory['redo_button'] = button
 
     def _keyboard_shortcuts(self):
         owner = self._owner
