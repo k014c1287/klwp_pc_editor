@@ -26,6 +26,8 @@ class BootstrapMixin:
         information = memory['archive']["preset"]["preset_info"]
         memory['preview_ts'] = information["ts"]
         memory['selected'] = None
+        memory['selected_items'] = ()
+        memory['module_clipboard'] = None
         memory['tree_map'] = {}
         memory['tree_drag'] = None
         memory['photo_cache'] = {}

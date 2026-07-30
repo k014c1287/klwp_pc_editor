@@ -115,6 +115,17 @@ classDiagram
         -_on_tree_drag(event)
         -_on_tree_release(event)
     }
+    class MultiSelectionMixin {
+        +cmd_copy()
+        +cmd_paste()
+        +cmd_duplicate()
+        +cmd_delete()
+        +cmd_move(difference)
+    }
+    class GroupingMixin {
+        +cmd_group_selection()
+        +cmd_ungroup_selection()
+    }
     class PreviewZoomMixin {
         +cmd_zoom_in()
         +cmd_zoom_out()
@@ -166,6 +177,8 @@ classDiagram
     PreviewValuesMixin <|-- EditorApp
     AdbTransferMixin <|-- EditorApp
     TreeDragMixin <|-- EditorApp
+    MultiSelectionMixin <|-- EditorApp
+    GroupingMixin <|-- EditorApp
     PreviewZoomMixin <|-- EditorApp
 
     CompositorLeafMixin <|-- CompositorMixin
@@ -178,7 +191,7 @@ classDiagram
     ResizeInteractionMixin ..> ResizeSession
     InteractionMixin ..> PositionMutation : drag
     ResizeInteractionMixin ..> PositionMutation : preserve opposite edge
-    DocumentMixin ..> PositionMutation : duplicate shift
+    MultiSelectionMixin ..> PositionMutation : paste shift
     CanvasRendererMixin ..> ResizeHandleSet : selection handles
     CanvasRendererMixin ..> PreviewZoom : render scale
     PreviewZoomMixin ..> PreviewZoom : edit view
@@ -552,6 +565,25 @@ classDiagram
     class TreeReorder {
         +move(siblings, source, target, after)
     }
+    class ModuleSelection {
+        +from_memory(memory)
+        +items()
+        +primary_item()
+        +same_parent()
+        +remove_all()
+    }
+    class ModuleClipboard {
+        +capture(modules, archive)
+        +paste_into(archive)
+    }
+    class GroupGeometry {
+        +item_bounds()
+        +union(bounds)
+    }
+    class GroupPosition {
+        +inside(item, bounds, container)
+        +root(item, bounds)
+    }
     class PropertyPanelBuilder {
         +build()
     }
@@ -657,6 +689,12 @@ classDiagram
     ModuleTreeBuilder ..> ModuleTreePresentation : row values
     EditorApp ..> TreeDragMixin : layer ordering
     TreeDragMixin ..> TreeReorder : commit drop
+    EditorApp ..> MultiSelectionMixin : multi item commands
+    MultiSelectionMixin ..> ModuleSelection : selected rows
+    MultiSelectionMixin ..> ModuleClipboard : modules and assets
+    EditorApp ..> GroupingMixin : group or dissolve
+    GroupingMixin ..> GroupGeometry : visual union
+    GroupingMixin ..> GroupPosition : preserve coordinates
     EditorApp ..> PropertyPanelBuilder : selected item
     PropertyPanelBuilder ..> AnchorChoices : anchor combobox conversion
     PropertyPanelBuilder ..> ColorControl : visual color editing
@@ -1247,7 +1285,73 @@ sequenceDiagram
     Preview-->>User: 選択したアイコンを表示
 ```
 
-### 3.14 選択要素の編集ズームと背景パン
+### 3.14 複数要素のファイル間コピー＆ペースト
+
+Treeviewは拡張選択を使用し、従来の `selected` は右ペインとキャンバス操作に使う主選択、`selected_items` は一括操作対象として保持します。コピー時はモジュールツリーを深いコピーにし、文字列参照されるbitmaps・fonts・extrasも同じパッケージへ保存します。別ファイルへの貼付で同名アセットの内容が異なる場合は新しい名前を採番し、貼付モジュール内の `kfile://` 参照だけを書き換えます。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Tree as Treeview
+    participant Selection as ModuleSelection
+    participant Commands as MultiSelectionMixin
+    participant Clipboard as ModuleClipboard
+    participant Source as コピー元KlwpArchive
+    participant Target as 貼付先KlwpArchive
+    participant History as HistoryTimeline
+
+    User->>Tree: Ctrl/Shiftで複数行を選択
+    User->>Commands: Ctrl+C
+    Commands->>Selection: from_memory
+    Selection-->>Commands: 選択モジュール
+    Commands->>Clipboard: capture(modules, Source)
+    Clipboard->>Source: 参照画像・フォントを収集
+    User->>Commands: 別ファイルを開いてCtrl+V
+    Commands->>Clipboard: paste_into(Target)
+    Clipboard->>Target: アセットをコピー
+    alt 同名で内容が異なる
+        Clipboard->>Clipboard: 一意名を採番
+        Clipboard->>Clipboard: kfile参照を置換
+    end
+    Clipboard-->>Commands: 独立したモジュール複製
+    Commands->>Target: 選択位置の後へinsert
+    Commands->>History: record(snapshot)
+```
+
+### 3.15 複数要素のグループ化／解除
+
+同じ兄弟配列にある静的要素をOverlapLayerへまとめます。グループ化前に各要素の描画境界unionを求め、子要素をunion左上基準の四辺余白へ、作成レイヤーを元の親基準の位置へ変換します。解除時は逆変換するため画面座標は維持されます。位置数式またはアニメーションを持つ要素は意味を変えてしまうため安全側で拒否します。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Commands as GroupingMixin
+    participant Selection as ModuleSelection
+    participant Geometry as GroupGeometry
+    participant Position as GroupPosition
+    participant Items as viewgroup_items
+    participant History as HistoryTimeline
+
+    User->>Commands: グループ化
+    Commands->>Selection: 同じ親の2件以上か検証
+    Commands->>Geometry: item_bounds / union
+    Geometry-->>Commands: 画面境界と外接矩形
+    Commands->>Position: 子をunion基準の四辺余白へ変換
+    Commands->>Position: 新規OverlapLayerを親基準へ配置
+    Commands->>Items: 選択要素をレイヤーへ置換
+    Commands->>History: record(snapshot)
+    opt 解除
+        User->>Commands: グループ解除
+        Commands->>Geometry: 子の現在境界
+        Commands->>Position: 親コンテキストの座標へ逆変換
+        Commands->>Items: レイヤーを子要素へ置換
+        Commands->>History: record(snapshot)
+    end
+```
+
+### 3.16 選択要素の編集ズームと背景パン
 
 編集表示のズームは100～400%のプレビュー専用状態です。「選択を拡大」は要素の境界が表示領域の約70%へ収まる倍率を計算し、その中心へクロップ位置を移動します。`−` / `＋` とCtrl+マウスホイールは段階的な倍率変更、「全体表示」は100%と原点へ復帰します。ホイール操作は変更前のポインタ位置を文書座標へ変換し、新しい倍率からクロップ原点を逆算することで、ポインタ下の内容を固定したまま拡縮します。WindowsのMouseWheel形式とButton-4/5形式の両方を受け付けます。
 
@@ -1312,7 +1416,7 @@ sequenceDiagram
 | 履歴 | `history`, `dirty` | 保存しない |
 | UI | `tree`, `canvas`, `status`, 各ボタン | 保存しない |
 | キャッシュ | `photo_cache`, `font_cache`, `_photo`, `_quality_preview`, `_item_bounds` | 保存しない |
-| 編集操作 | `selected`, `drag_state`, `resize_state`, `_view_pan_state`, `tree_drag` | 保存しない |
+| 編集操作 | `selected`, `selected_items`, `drag_state`, `resize_state`, `_view_pan_state`, `tree_drag`, `module_clipboard` | 保存しない |
 | プレビュー | `preview_scroll`, `preview_switches`, `preview_switch_progress`, `preview_values`, `preview_ts`, `preview_zoom`, `_view_origin` | 保存しない |
 | アニメーション | `_switch_transitions`, `_scroll_transition`, `_loop_started_at` | 保存しない |
 | イベント | `_event_regions`, `interaction_drag` | 保存しない |

@@ -41,7 +41,7 @@ BitmapModule/KomponentModule含む) と `S041.klwp` (要素198個, Stack/Shape�
 - Shape/Textおよび時計グループの回転、TRIANGLE
 - `fx_shadow: OUTER`、`paint_stroke`、動的背景・色・幅・可視性
 - preset_infoの縦横比自動採用、v10旧配置の互換補正
-- GUIなしの `render_to_image()`、実機スクショとのMSE・PSNR・SSIM／差分ヒートマップ／品質ゲート、回帰・構造テスト（現在82テスト）
+- GUIなしの `render_to_image()`、実機スクショとのMSE・PSNR・SSIM／差分ヒートマップ／品質ゲート、回帰・構造テスト（現在87テスト）
 - Komponent倍率、線形／放射／Sweepグラデーション、主要blend mode
 - ROTATE/SCALE/色フィルターとease、編集可能なKodeプレビュー値
 - 全グローバル型・外部タップアクションの編集UI、adbワンクリック転送
@@ -50,6 +50,8 @@ BitmapModule/KomponentModule含む) と `S041.klwp` (要素198個, Stack/Shape�
 - Switch専用管理画面を全型対応Global管理へ統合。ツールバーはルートGlobal、Komponent選択時の右ペインはローカルGlobalを別ボタンで編集
 - 要素ツリーの種類・前面順表示、選択解除によるルート追加先への復帰、同一レイヤー内ドラッグ並べ替え
 - Ctrl+Z/Ctrl+YによるUndo/Redoと、要素ツリーの確認なしDelete削除・Undo復元
+- Ctrl/Shift複数選択、要素と依存アセットのファイル間コピー、一括複製・
+  削除・前後移動、静的OverlapLayerのグループ化／解除
 - 総ページ数の編集・Undo/Redo・`preset_info.xscreens` 保存と、縮小時のプレビュー位置補正
 
 以降に残る「Bitmap/数式/影/回転が未実装」という記述は改修前の履歴であり、
@@ -280,7 +282,7 @@ presetへ保存しない。ルート要素の `internal_animations` を合成し
 
 ## 6. テスト・検証方法
 
-- 全テスト: `python -m unittest -v`（機能81件＋構造1件）
+- 全テスト: `python -m unittest -v`（機能86件＋構造1件）
 - 構造規約のみ: `python tools/check_object_calisthenics.py`
 - 実機差分: `python tools/compare_preview.py --reference <screenshot.png> --preset <preset.klwp> --output artifacts/pixel_diff/<case>`。MSE・PSNR・グローバルSSIMとヒートマップを出力し、`--max-mse`・`--min-ssim`で終了コードによる品質ゲートを設定可能
 - Pillowヘッドレス描画: GUIを起動せず `render_to_image()` を呼び、全sampleを検証
@@ -316,6 +318,10 @@ presetへ保存しない。ルート要素の `internal_animations` を合成し
    `internal_formulas` を関数候補・構文診断・現在値評価付きで編集
 13. 完了: FontIconピッカー。Material系定番アイコンとプリセット内の
    既存カスタムアイコンを検索グリッドから選択し、内蔵SVGとして保存
+14. 完了: 要素の複数選択とコピー＆ペースト。別ファイル間では参照画像・
+    フォントも移行し、同名衝突時は新しい名前へ参照を置換
+15. 完了: 複数要素の一括複製・削除・前後移動と、静的要素の
+    OverlapLayerグループ化／解除（画面座標を維持）
 
 ## 7.1 次の優先タスク候補 (2026-07-25 整理)
 

@@ -28,6 +28,9 @@ class TreeDragMixin:
         tree_map = self.memory["tree_map"]
         if not identifier or identifier not in tree_map:
             return None
+        tree = self.memory["tree"]
+        if len(tree.selection()) > 1:
+            return None
         item, siblings = tree_map[identifier]
         return {
             "source_identifier": identifier, "source_item": item,

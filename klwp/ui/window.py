@@ -39,7 +39,10 @@ class EditorWindowBuilder:
             ("＋画像", lambda: owner.cmd_add("bitmap")),
             ("＋レイヤー", lambda: owner.cmd_add("layer")),
             ("｜", None),
+            ("コピー", owner.cmd_copy), ("貼付", owner.cmd_paste),
             ("複製", owner.cmd_duplicate), ("削除", owner.cmd_delete),
+            ("グループ化", owner.cmd_group_selection),
+            ("解除", owner.cmd_ungroup_selection),
             ("背面へ", lambda: owner.cmd_move(-1)),
             ("前面へ", lambda: owner.cmd_move(1)),
             ("｜", None),
@@ -79,7 +82,7 @@ class EditorWindowBuilder:
         self._module_tree_header(frame)
         tree = ttk.Treeview(
             frame, columns=("kind", "priority"),
-            show="tree headings", selectmode="browse")
+            show="tree headings", selectmode="extended")
         self._configure_module_tree(tree)
         tree.pack(fill="both", expand=True)
         tree.bind("<<TreeviewSelect>>", owner._on_tree_select)
@@ -87,6 +90,8 @@ class EditorWindowBuilder:
         tree.bind("<B1-Motion>", owner._on_tree_drag, add="+")
         tree.bind("<ButtonRelease-1>", owner._on_tree_release, add="+")
         tree.bind("<Delete>", owner._on_delete_shortcut)
+        tree.bind("<Control-c>", owner._on_copy_shortcut)
+        tree.bind("<Control-v>", owner._on_paste_shortcut)
         owner.memory['tree'] = tree
         body.add(frame, weight=1)
 

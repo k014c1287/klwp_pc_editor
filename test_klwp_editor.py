@@ -22,6 +22,8 @@ from klwp.ui.kode_dialog import (
     KodeInspector, KodeSyntax, KodeTargetCollection,
 )
 from klwp.ui.document import DocumentMixin
+from klwp.ui.multi_selection import MultiSelectionMixin
+from klwp.ui.grouping import GroupingMixin
 from klwp.ui.window import EditorWindowBuilder
 from klwp.adb import AdbDevices, AdbTransfer
 from klwp.preview.pages import PresetPageCount, PreviewPageCounter
@@ -32,6 +34,8 @@ from klwp.runtime import Resampling
 from klwp.preview.zoom import CachedPreviewImage, PreviewPan, PreviewZoom
 from klwp.ui.tree import ModuleTreePresentation
 from klwp.ui.tree_drag import TreeDragMixin, TreeReorder
+from klwp.clipboard import ModuleClipboard
+from klwp.selection import ModuleSelection
 from klwp.ui.zoom import PreviewZoomMixin
 
 
@@ -41,6 +45,11 @@ SAMPLES = ROOT / "sample"
 
 class _TreeEditor(DocumentMixin, TreeDragMixin):
     pass
+
+
+class _MultiEditor(MultiSelectionMixin, GroupingMixin, DocumentMixin):
+    def _set_status(self, text):
+        self.memory["last_status"] = text
 
 
 class FormulaTests(unittest.TestCase):
@@ -422,6 +431,110 @@ class ModuleTreeTests(unittest.TestCase):
         confirmation.assert_not_called()
         self.assertEqual(archive.modules(), [])
         self.assertIsNone(editor.memory['selected'])
+        editor._mark_dirty.assert_called_once_with()
+        editor._refresh_all.assert_called_once_with()
+
+    def test_module_selection_tracks_focus_and_common_parent(self):
+        first = ke.make_module("shape")
+        second = ke.make_module("text")
+        parent = [first, second]
+        tree = Mock()
+        tree.selection.return_value = ("first", "second")
+        tree.focus.return_value = "second"
+        memory = {
+            "tree": tree,
+            "tree_map": {
+                "first": (first, parent),
+                "second": (second, parent),
+            },
+        }
+
+        selection = ModuleSelection.from_memory(memory)
+
+        self.assertEqual(selection.items(), (first, second))
+        self.assertIs(selection.primary_item(), second)
+        self.assertTrue(selection.same_parent())
+
+    def test_module_clipboard_renames_conflicting_bitmap_on_cross_file_paste(self):
+        bitmap_name = "bitmaps/IMG" + "1" * 32
+        reference = "kfile://org.kustom.provider/" + bitmap_name
+        source = ke.KlwpArchive()
+        source.new()
+        source["bitmaps"][bitmap_name] = b"source bitmap"
+        item = ke.make_module("bitmap")
+        item["bitmap_bitmap"] = reference
+        package = ModuleClipboard.capture((item,), source)
+        destination = ke.KlwpArchive()
+        destination.new()
+        destination["bitmaps"][bitmap_name] = b"other bitmap"
+
+        pasted = package.paste_into(destination)[0]
+
+        self.assertNotEqual(pasted["bitmap_bitmap"], reference)
+        self.assertEqual(len(destination["bitmaps"]), 2)
+        pasted_name = pasted["bitmap_bitmap"].split(
+            "kfile://org.kustom.provider/", 1)[1]
+        self.assertEqual(destination["bitmaps"][pasted_name], b"source bitmap")
+
+    def test_multi_selection_copy_pastes_into_another_document(self):
+        source = ke.KlwpArchive()
+        source.new()
+        first = ke.make_module("shape")
+        second = ke.make_module("text")
+        source.modules().extend((first, second))
+        editor = _MultiEditor()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory["archive"] = source
+        editor.memory["tree"] = Mock()
+        editor.memory["tree"].selection.return_value = ("first", "second")
+        editor.memory["tree"].focus.return_value = "second"
+        editor.memory["tree_map"] = {
+            "first": (first, source.modules()),
+            "second": (second, source.modules()),
+        }
+        editor.cmd_copy()
+        destination = ke.KlwpArchive()
+        destination.new()
+        editor.memory["archive"] = destination
+        editor.memory["selected"] = None
+        editor.memory["selected_items"] = ()
+        editor.memory["tree"].selection.return_value = ()
+        editor.memory["tree"].focus.return_value = ""
+        editor.memory["tree_map"] = {}
+        editor._mark_dirty = Mock()
+        editor._refresh_all = Mock()
+
+        editor.cmd_paste()
+
+        self.assertEqual(len(destination.modules()), 2)
+        self.assertEqual(
+            [item["internal_type"] for item in destination.modules()],
+            ["ShapeModule", "TextModule"])
+        self.assertEqual(len(editor.memory["selected_items"]), 2)
+        editor._mark_dirty.assert_called_once_with()
+
+    def test_delete_shortcut_removes_all_selected_items_without_confirmation(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        first = ke.make_module("shape")
+        second = ke.make_module("text")
+        archive.modules().extend((first, second))
+        editor = _MultiEditor()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory["archive"] = archive
+        editor.memory["tree"] = Mock()
+        editor.memory["tree"].selection.return_value = ("first", "second")
+        editor.memory["tree"].focus.return_value = "second"
+        editor.memory["tree_map"] = {
+            "first": (first, archive.modules()),
+            "second": (second, archive.modules()),
+        }
+        editor._mark_dirty = Mock()
+        editor._refresh_all = Mock()
+
+        editor._on_delete_shortcut()
+
+        self.assertEqual(archive.modules(), [])
         editor._mark_dirty.assert_called_once_with()
         editor._refresh_all.assert_called_once_with()
 
@@ -1435,6 +1548,54 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(renderer._hit_item(
             bounds[0] + bounds[2] / 2,
             bounds[1] + bounds[3] / 2), child)
+
+    def test_group_and_ungroup_preserve_selected_item_bounds(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        first = ke.make_shape_module("長方形")
+        first.update(
+            position_anchor="TOPLEFT", position_offset_x=80.0,
+            position_offset_y=120.0, shape_width=100.0, shape_height=60.0)
+        second = ke.make_shape_module("円")
+        second.update(
+            position_anchor="TOPLEFT", position_offset_x=230.0,
+            position_offset_y=210.0, shape_width=70.0, shape_height=70.0)
+        archive.modules().extend((first, second))
+        renderer = self.renderer(archive)
+        renderer.render_to_image(360, 600)
+        before = (renderer._bounds(first), renderer._bounds(second))
+        tree = Mock()
+        tree.selection.return_value = ("first", "second")
+        tree.focus.return_value = "second"
+        renderer.memory["tree"] = tree
+        renderer.memory["tree_map"] = {
+            "first": (first, archive.modules()),
+            "second": (second, archive.modules()),
+        }
+        renderer.memory["status"] = Mock()
+        renderer._mark_dirty = Mock()
+        renderer._refresh_all = Mock()
+
+        renderer.cmd_group_selection()
+        group = archive.modules()[0]
+        renderer.render_to_image(360, 600)
+        grouped_bounds = tuple(
+            renderer._bounds(item) for item in group["viewgroup_items"])
+        tree.selection.return_value = ("group",)
+        tree.focus.return_value = "group"
+        renderer.memory["tree_map"] = {"group": (group, archive.modules())}
+        renderer.cmd_ungroup_selection()
+        renderer.render_to_image(360, 600)
+        after = tuple(renderer._bounds(item) for item in archive.modules())
+
+        for expected, grouped, restored in zip(
+                before, grouped_bounds, after):
+            self.assertTupleAlmostEqual(grouped, expected)
+            self.assertTupleAlmostEqual(restored, expected)
+
+    def assertTupleAlmostEqual(self, actual, expected):
+        for actual_value, expected_value in zip(actual, expected):
+            self.assertAlmostEqual(actual_value, expected_value, places=1)
 
     def test_sizuka_shape_less_overlap_layers_wrap_all_children(self):
         archive = ke.KlwpArchive()
