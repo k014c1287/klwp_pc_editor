@@ -64,7 +64,7 @@ if HAS_TK:
             ("shape_offset", "扇形・弧の角度"),
             ("paint_color", "色"),
             ("text_size", "文字サイズ"), ("text_family", "フォント"),
-            ("icon_icon", "アイコン名"), ("icon_size", "アイコンサイズ"),
+            ("icon_size", "アイコンサイズ"),
             ("bitmap_width", "画像幅"),
             ("bitmap_alpha", "画像不透明度 (0-100)"),
         ]

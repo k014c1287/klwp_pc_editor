@@ -2,6 +2,8 @@
 
 from ..shared import *  # noqa: F401,F403
 from .color_control import ColorControl
+from .icon_picker import IconPickerDialog
+from .kode_dialog import KodeEditorDialog
 
 
 class AnchorChoices:
@@ -217,11 +219,15 @@ class PropertyPanelBuilder:
 
     def _image_button(self):
         owner = self._owner
+        item = self._item
         memory = owner.memory
+        is_icon = item.get("internal_type") == "FontIconModule"
+        label = "FontIcon を選択" if is_icon else "この要素に画像を割り当て"
+        command = (lambda: IconPickerDialog(owner, item).show()) \
+            if is_icon else self._set_image
         ttk.Button(
-            memory['prop_frame'],
-            text="この要素に画像を割り当て",
-            command=self._set_image).pack(fill="x", pady=(10, 2))
+            memory['prop_frame'], text=label, command=command
+        ).pack(fill="x", pady=(10, 2))
 
     def _set_image(self):
         owner = self._owner
@@ -266,6 +272,8 @@ class PropertyPanelBuilder:
         ttk.Label(
             frame, text=f"アニメーション {animation_count}件 / タップ {event_count}件"
         ).pack(anchor="w", pady=(0, 4))
+        command = lambda: KodeEditorDialog(owner, item).show()
+        self._interaction_button(frame, "Kode 数式をライブ編集", command)
         self._interaction_button(frame, "アニメーション設定", owner._edit_animations)
         self._interaction_button(frame, "タップイベント設定", owner._edit_tap_events)
         self._interaction_button(frame, "グローバル変数管理", owner._edit_globals)
