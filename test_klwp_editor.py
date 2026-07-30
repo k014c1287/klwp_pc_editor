@@ -13,6 +13,7 @@ from klwp.ui.property_panel import AnchorChoices, PropertyPanelBuilder
 from klwp.ui.color_control import KlwpColor
 from klwp.resize import ResizeHandleSet, ResizeSession
 from klwp.positioning import PositionMutation
+from klwp.snap import SnapEngine, SnapTargets
 from klwp.background import BackgroundImageBinding, BitmapGlobalCollection
 from klwp.icons import IconCatalog, MATERIAL_ICON_SET
 from klwp.svg import decode_kustom_icon
@@ -921,6 +922,43 @@ class PositioningTests(unittest.TestCase):
         self.assertEqual(item["position_padding_top"], -25.0)
         self.assertEqual(item["position_padding_bottom"], 25.0)
         self.assertNotIn("position_offset_x", item)
+
+
+class SnapTests(unittest.TestCase):
+    def test_document_ruler_snaps_nearest_item_edge(self):
+        targets = SnapTargets.from_layout((720.0, 1200.0), (), None)
+        engine = SnapEngine(targets, 3.0)
+
+        result = engine.apply((45.0, 40.0, 50.0, 20.0), 4.0, 0.0)
+
+        self.assertEqual(result.movement(), (5.0, 0.0))
+        self.assertEqual(result.guides(), (("vertical", 100.0),))
+
+    def test_other_item_edges_and_centers_are_snap_targets(self):
+        selected = {}
+        other = {}
+        targets = SnapTargets.from_layout(
+            (720.0, 1200.0),
+            ((selected, (100.0, 100.0, 100.0, 50.0)),
+             (other, (330.0, 200.0, 80.0, 80.0))),
+            selected)
+
+        result = SnapEngine(targets, 7.0).apply(
+            (150.0, 100.0, 100.0, 50.0), 74.0, 108.0)
+
+        self.assertEqual(result.movement(), (80.0, 115.0))
+        self.assertEqual(
+            result.guides(),
+            (("vertical", 330.0), ("horizontal", 240.0)))
+
+    def test_movement_outside_tolerance_is_not_changed(self):
+        targets = SnapTargets((300.0,), (400.0,))
+
+        result = SnapEngine(targets, 5.0).apply(
+            (10.0, 20.0, 50.0, 50.0), 17.0, 19.0)
+
+        self.assertEqual(result.movement(), (17.0, 19.0))
+        self.assertEqual(result.guides(), ())
 
 
 class BackgroundTests(unittest.TestCase):

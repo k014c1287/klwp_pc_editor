@@ -3,9 +3,10 @@
 from ..shared import *  # noqa: F401,F403
 from ..preview.zoom import PreviewZoom
 from ..resize import ResizeHandleSet
+from .guides import CanvasGuideMixin
 
 
-class CanvasRendererMixin:
+class CanvasRendererMixin(CanvasGuideMixin):
     def _render(self):
         canvas = self.memory['canvas']
         canvas.delete("all")
@@ -19,6 +20,7 @@ class CanvasRendererMixin:
         self.memory['_photo'] = ImageTk.PhotoImage(preview.convert("RGB"))
         canvas.create_image(0, 0, image=self.memory['_photo'], anchor="nw")
         self._paint_selection(canvas)
+        self._paint_canvas_guides(canvas)
 
     def _configure_canvas(self, canvas):
         document_width, document_height = self._doc_size()

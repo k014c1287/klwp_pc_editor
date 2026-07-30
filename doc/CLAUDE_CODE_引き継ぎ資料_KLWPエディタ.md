@@ -41,7 +41,7 @@ BitmapModule/KomponentModule含む) と `S041.klwp` (要素198個, Stack/Shape�
 - Shape/Textおよび時計グループの回転、TRIANGLE
 - `fx_shadow: OUTER`、`paint_stroke`、動的背景・色・幅・可視性
 - preset_infoの縦横比自動採用、v10旧配置の互換補正
-- GUIなしの `render_to_image()`、実機スクショとのMSE・PSNR・SSIM／差分ヒートマップ／品質ゲート、回帰・構造テスト（現在87テスト）
+- GUIなしの `render_to_image()`、実機スクショとのMSE・PSNR・SSIM／差分ヒートマップ／品質ゲート、回帰・構造テスト（現在90テスト）
 - Komponent倍率、線形／放射／Sweepグラデーション、主要blend mode
 - ROTATE/SCALE/色フィルターとease、編集可能なKodeプレビュー値
 - 全グローバル型・外部タップアクションの編集UI、adbワンクリック転送
@@ -53,6 +53,8 @@ BitmapModule/KomponentModule含む) と `S041.klwp` (要素198個, Stack/Shape�
 - Ctrl/Shift複数選択、要素と依存アセットのファイル間コピー、一括複製・
   削除・前後移動、静的OverlapLayerのグループ化／解除
 - 総ページ数の編集・Undo/Redo・`preset_info.xscreens` 保存と、縮小時のプレビュー位置補正
+- 100単位ルーラー、キャンバス／他要素の端・中心へのドラッグ吸着、
+  一時整列ガイド（プレビュー専用で成果物には保存しない）
 
 以降に残る「Bitmap/数式/影/回転が未実装」という記述は改修前の履歴であり、
 上記が現行状態。未対応なのは主に公式Kode全関数、新Shader、Android固有の
@@ -282,7 +284,7 @@ presetへ保存しない。ルート要素の `internal_animations` を合成し
 
 ## 6. テスト・検証方法
 
-- 全テスト: `python -m unittest -v`（機能86件＋構造1件）
+- 全テスト: `python -m unittest -v`（機能89件＋構造1件）
 - 構造規約のみ: `python tools/check_object_calisthenics.py`
 - 実機差分: `python tools/compare_preview.py --reference <screenshot.png> --preset <preset.klwp> --output artifacts/pixel_diff/<case>`。MSE・PSNR・グローバルSSIMとヒートマップを出力し、`--max-mse`・`--min-ssim`で終了コードによる品質ゲートを設定可能
 - Pillowヘッドレス描画: GUIを起動せず `render_to_image()` を呼び、全sampleを検証
@@ -322,6 +324,8 @@ presetへ保存しない。ルート要素の `internal_animations` を合成し
     フォントも移行し、同名衝突時は新しい名前へ参照を置換
 15. 完了: 複数要素の一括複製・削除・前後移動と、静的要素の
     OverlapLayerグループ化／解除（画面座標を維持）
+16. 完了: キャンバスの100単位ルーラー、要素・キャンバスの端／中心への
+    7pxスナップ、ドラッグ中の整列ガイド
 
 ## 7.1 次の優先タスク候補 (2026-07-25 整理)
 
@@ -353,7 +357,7 @@ presetへ保存しない。ルート要素の `internal_animations` を合成し
    `icon_set` (`iconify://...`) のセット名を基準に、よく使うアイコンを
    グリッド表示してクリック選択できるようにする。
 7. **要素のコピー&ペースト** (同一/別ファイル間) と複数選択・グループ操作
-8. **キャンバスのスナップ／整列ガイド・ルーラー**
+8. **完了: キャンバスのスナップ／整列ガイド・ルーラー**
 
 ### C. ワークフロー・互換性
 

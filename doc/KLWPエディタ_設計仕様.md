@@ -69,6 +69,22 @@ classDiagram
         -_render()
         +render_to_image(width, height)
     }
+    class CanvasGuideMixin {
+        -_guides_enabled()
+        -_paint_canvas_guides(canvas)
+    }
+    class SnapTargets {
+        +from_layout(document_size, item_bounds, selected)
+        +vertical()
+        +horizontal()
+    }
+    class SnapEngine {
+        +apply(bounds, horizontal, vertical)
+    }
+    class SnapResult {
+        +movement()
+        +guides()
+    }
     class ZoomPreviewRendererMixin {
         -_render_zoom_preview()
         -_present_zoom_preview(canvas, preview)
@@ -165,6 +181,7 @@ classDiagram
     DocumentMixin <|-- EditorApp
     PreviewModelMixin <|-- EditorApp
     CanvasRendererMixin <|-- EditorApp
+    CanvasGuideMixin <|-- CanvasRendererMixin
     ZoomPreviewRendererMixin <|-- EditorApp
     LayoutMixin <|-- EditorApp
     CompositorMixin <|-- EditorApp
@@ -190,6 +207,9 @@ classDiagram
     ResizeInteractionMixin ..> ResizeHandleSet
     ResizeInteractionMixin ..> ResizeSession
     InteractionMixin ..> PositionMutation : drag
+    InteractionMixin ..> SnapTargets : ruler and item features
+    InteractionMixin ..> SnapEngine : adjust drag movement
+    SnapEngine ..> SnapResult
     ResizeInteractionMixin ..> PositionMutation : preserve opposite edge
     MultiSelectionMixin ..> PositionMutation : paste shift
     CanvasRendererMixin ..> ResizeHandleSet : selection handles
@@ -1406,6 +1426,37 @@ sequenceDiagram
     Interaction->>Item: 文書座標の値だけを更新
 ```
 
+### 3.17 ドラッグスナップ・整列ガイド・ルーラー
+
+スナップは成果物のフィールドを直接扱わず、現在の描画境界とマウス移動量から補正後の移動量を返します。候補はキャンバス四辺・中心、100単位のルーラー、選択要素を除く全描画要素の左右端／上下端／中心です。画面上7pxを文書単位へ換算した許容幅内だけ吸着し、採用した候補位置を一時ガイドとしてCanvasへ重ねます。マウスを離すとガイドは消え、通常どおり1回の履歴へ記録されます。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Drag as InteractionMixin
+    participant Bounds as item_bounds
+    participant Targets as SnapTargets
+    participant Engine as SnapEngine
+    participant Result as SnapResult
+    participant Position as PositionMutation
+    participant Canvas as CanvasGuideMixin
+    participant History as HistoryTimeline
+
+    User->>Drag: 選択要素をドラッグ
+    Drag->>Bounds: 選択要素と他要素の描画境界
+    Drag->>Targets: from_layout(document, bounds, selected)
+    Targets-->>Drag: 端・中心・100単位目盛り
+    Drag->>Engine: apply(bounds, raw movement, 7px換算)
+    Engine-->>Result: 補正移動量と採用ガイド
+    Result-->>Drag: movement / guides
+    Drag->>Position: move_by(snapped movement)
+    Drag->>Canvas: 再描画とマゼンタガイド
+    User->>Drag: マウスを離す
+    Drag->>Canvas: 一時ガイドを消去
+    Drag->>History: record(snapshot)
+```
+
 ## 4. 状態とデータの境界
 
 ### 4.1 `ApplicationMemory` の主な内容
@@ -1417,7 +1468,7 @@ sequenceDiagram
 | UI | `tree`, `canvas`, `status`, 各ボタン | 保存しない |
 | キャッシュ | `photo_cache`, `font_cache`, `_photo`, `_quality_preview`, `_item_bounds` | 保存しない |
 | 編集操作 | `selected`, `selected_items`, `drag_state`, `resize_state`, `_view_pan_state`, `tree_drag`, `module_clipboard` | 保存しない |
-| プレビュー | `preview_scroll`, `preview_switches`, `preview_switch_progress`, `preview_values`, `preview_ts`, `preview_zoom`, `_view_origin` | 保存しない |
+| プレビュー | `preview_scroll`, `preview_switches`, `preview_switch_progress`, `preview_values`, `preview_ts`, `preview_zoom`, `_view_origin`, `snap_guides` | 保存しない |
 | アニメーション | `_switch_transitions`, `_scroll_transition`, `_loop_started_at` | 保存しない |
 | イベント | `_event_regions`, `interaction_drag` | 保存しない |
 

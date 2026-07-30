@@ -3,6 +3,7 @@
 from ..shared import *  # noqa: F401,F403
 from ..positioning import PositionMutation
 from ..preview.pages import PresetPageCount
+from ..snap import SnapEngine, SnapTargets
 from .pan import PreviewPanMixin
 from .resize_interaction import ResizeInteractionMixin
 
@@ -254,6 +255,7 @@ class InteractionMixin(
             self._start_preview_pan_on_background(event, horizontal, vertical)
             return
         self.memory['resize_state'] = None
+        self.memory['snap_guides'] = ()
         self.memory['drag_state'] = (horizontal, vertical)
 
     def _start_preview_pan_on_background(
@@ -328,15 +330,33 @@ class InteractionMixin(
         self._set_preview_scroll(state["page"] - difference / canvas_width)
 
     def _drag_selected_item(self, event):
+        scale = self.memory['_scale']
         initial_horizontal, initial_vertical = self.memory['drag_state']
         horizontal, vertical = self._document_point(event)
         difference_horizontal = horizontal - initial_horizontal
         difference_vertical = vertical - initial_vertical
         selected = self.memory['selected']
+        difference_horizontal, difference_vertical = self._snapped_movement(
+            selected, difference_horizontal, difference_vertical, scale)
         mutation = self._position_mutation(selected)
         mutation.move_by(difference_horizontal, difference_vertical)
         self.memory['drag_state'] = (horizontal, vertical)
         self._render()
+
+    def _snapped_movement(self, selected, horizontal, vertical, scale):
+        memory = self.memory
+        if not self._guides_enabled():
+            memory["snap_guides"] = ()
+            return horizontal, vertical
+        bounds = self._bounds(selected)
+        if bounds is None:
+            return horizontal, vertical
+        targets = SnapTargets.from_layout(
+            memory["_doc"], memory.optional("_item_bounds", []), selected)
+        result = SnapEngine(targets, 7.0 / max(scale, 0.001)).apply(
+            bounds, horizontal, vertical)
+        memory["snap_guides"] = result.guides()
+        return result.movement()
 
     def _position_mutation(self, item):
         archive = self.memory['archive']
@@ -354,8 +374,10 @@ class InteractionMixin(
             return
         if self.memory['drag_state']:
             self.memory['drag_state'] = None
+            self.memory['snap_guides'] = ()
             self._mark_dirty()
             self._build_props()
+            self._render()
 
     def _release_interaction(self, event):
         state = self.memory['interaction_drag']
