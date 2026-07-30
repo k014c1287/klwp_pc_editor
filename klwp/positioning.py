@@ -13,6 +13,39 @@ UPWARD_OFFSET_ANCHORS = (
 )
 
 
+class KeyboardNudge:
+    """Translate one arrow-key event into a visual KLWP movement."""
+
+    DIRECTIONS = {
+        "Left": (-1.0, 0.0),
+        "Right": (1.0, 0.0),
+        "Up": (0.0, -1.0),
+        "Down": (0.0, 1.0),
+    }
+    SHIFT_MASK = 0x0001
+
+    def __init__(self, direction, accelerated):
+        self._values = {
+            "direction": direction,
+            "distance": 10.0 if accelerated else 1.0,
+        }
+
+    @staticmethod
+    def from_event(event):
+        directions = KeyboardNudge.DIRECTIONS
+        direction = directions.get(event.keysym)
+        if direction is None:
+            return None
+        state = int(getattr(event, "state", 0))
+        accelerated = bool(state & KeyboardNudge.SHIFT_MASK)
+        return KeyboardNudge(direction, accelerated)
+
+    def apply_to(self, mutation):
+        horizontal, vertical = self._values["direction"]
+        distance = self._values["distance"]
+        mutation.move_by(horizontal * distance, vertical * distance)
+
+
 class PositionMutation:
     """Move one item through the fields used by its KLWP layout context."""
 

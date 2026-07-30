@@ -2,7 +2,7 @@
 
 from ..shared import *  # noqa: F401,F403
 from ..clipboard import ModuleClipboard
-from ..positioning import PositionMutation
+from ..positioning import KeyboardNudge, PositionMutation
 from ..selection import ModuleSelection
 
 
@@ -74,6 +74,24 @@ class MultiSelectionMixin:
     def _on_paste_shortcut(self, _event=None):
         self.cmd_paste()
         return "break"
+
+    def _on_nudge_shortcut(self, event):
+        selection = self._module_selection()
+        nudge = KeyboardNudge.from_event(event)
+        if selection.empty() or nudge is None:
+            return None
+        self._nudge_selection(selection, nudge)
+        return "break"
+
+    def _nudge_selection(self, selection, nudge):
+        archive = self.memory["archive"]
+        root_items = archive.modules()
+        for item, parent in selection.ordered_targets():
+            mutation = PositionMutation(item, parent is root_items)
+            nudge.apply_to(mutation)
+        self._mark_dirty()
+        self._render()
+        self._build_props()
 
     def cmd_duplicate(self):
         selection = self._module_selection()

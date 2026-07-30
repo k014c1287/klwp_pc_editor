@@ -41,8 +41,15 @@ class EditorWindowBuilder:
         tree.bind("<Delete>", owner._on_delete_shortcut)
         tree.bind("<Control-c>", owner._on_copy_shortcut)
         tree.bind("<Control-v>", owner._on_paste_shortcut)
+        self._tree_nudge_shortcuts(tree)
         owner.memory['tree'] = tree
         body.add(frame, weight=1)
+
+    def _tree_nudge_shortcuts(self, tree):
+        owner = self._owner
+        for key in ("Left", "Right", "Up", "Down"):
+            tree.bind(f"<{key}>", owner._on_nudge_shortcut)
+            tree.bind(f"<Shift-{key}>", owner._on_nudge_shortcut)
 
     def _module_tree_header(self, frame):
         owner = self._owner
