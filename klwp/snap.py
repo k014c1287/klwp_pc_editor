@@ -57,6 +57,13 @@ class SnapResult:
     def movement(self):
         return self._values["horizontal"], self._values["vertical"]
 
+    def correction(self, horizontal, vertical):
+        snapped_horizontal, snapped_vertical = self.movement()
+        return (
+            snapped_horizontal - horizontal,
+            snapped_vertical - vertical,
+        )
+
     def guides(self):
         guides = []
         vertical = self._values["vertical_guide"]

@@ -41,7 +41,7 @@ BitmapModule/KomponentModule含む) と `S041.klwp` (要素198個, Stack/Shape�
 - Shape/Textおよび時計グループの回転、TRIANGLE
 - `fx_shadow: OUTER`、`paint_stroke`、動的背景・色・幅・可視性
 - preset_infoの縦横比自動採用、v10旧配置の互換補正
-- GUIなしの `render_to_image()`、実機スクショとのMSE・PSNR・SSIM／差分ヒートマップ／品質ゲート、回帰・構造テスト（現在92テスト）
+- GUIなしの `render_to_image()`、実機スクショとのMSE・PSNR・SSIM／差分ヒートマップ／品質ゲート、回帰・構造テスト（現在94テスト）
 - Komponent倍率、線形／放射／Sweepグラデーション、主要blend mode
 - ROTATE/SCALE/色フィルターとease、編集可能なKodeプレビュー値
 - 全グローバル型・外部タップアクションの編集UI、adbワンクリック転送
@@ -53,8 +53,8 @@ BitmapModule/KomponentModule含む) と `S041.klwp` (要素198個, Stack/Shape�
 - Ctrl/Shift複数選択、要素と依存アセットのファイル間コピー、一括複製・
   削除・前後移動、静的OverlapLayerのグループ化／解除
 - 総ページ数の編集・Undo/Redo・`preset_info.xscreens` 保存と、縮小時のプレビュー位置補正
-- 100単位ルーラー、キャンバス／他要素の端・中心へのドラッグ吸着、
-  一時整列ガイド（プレビュー専用で成果物には保存しない）
+- 100単位ルーラー、キャンバス／他要素の端・中心への4px候補ガイド。
+  ドラッグ中は自由追従し、リリース時だけ最終補正（成果物へUI状態は保存しない）
 - 従来ツールバーの全操作を6分類で保持するメニューバーと、常用11操作に絞ったツールバー。
   追加5種はツールバーのプルダウンへ集約
 
@@ -286,7 +286,7 @@ presetへ保存しない。ルート要素の `internal_animations` を合成し
 
 ## 6. テスト・検証方法
 
-- 全テスト: `python -m unittest -v`（機能91件＋構造1件）
+- 全テスト: `python -m unittest -v`（機能93件＋構造1件）
 - 構造規約のみ: `python tools/check_object_calisthenics.py`
 - 実機差分: `python tools/compare_preview.py --reference <screenshot.png> --preset <preset.klwp> --output artifacts/pixel_diff/<case>`。MSE・PSNR・グローバルSSIMとヒートマップを出力し、`--max-mse`・`--min-ssim`で終了コードによる品質ゲートを設定可能
 - Pillowヘッドレス描画: GUIを起動せず `render_to_image()` を呼び、全sampleを検証
@@ -327,9 +327,11 @@ presetへ保存しない。ルート要素の `internal_animations` を合成し
 15. 完了: 複数要素の一括複製・削除・前後移動と、静的要素の
     OverlapLayerグループ化／解除（画面座標を維持）
 16. 完了: キャンバスの100単位ルーラー、要素・キャンバスの端／中心への
-    7pxスナップ、ドラッグ中の整列ガイド
+    スナップ、ドラッグ中の整列ガイド
 17. 完了: 従来ツールバーの全操作を6分類で保持するネイティブメニューバーと、常用11操作・
     追加プルダウンに絞り初期1280px幅へ収めたツールバー
+18. 完了: スナップ許容幅を4pxへ縮小し、ドラッグ中の強制吸着を廃止。
+    候補ガイドを表示し、リリース時だけ補正する滑らかな操作へ変更
 
 ## 7.1 次の優先タスク候補 (2026-07-25 整理)
 

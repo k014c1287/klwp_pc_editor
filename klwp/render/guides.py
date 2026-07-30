@@ -14,6 +14,7 @@ class CanvasGuideMixin:
     def _on_snap_guides_changed(self):
         if not self._guides_enabled():
             self.memory["snap_guides"] = ()
+            self.memory["snap_correction"] = (0.0, 0.0)
         self._render()
 
     def _paint_canvas_guides(self, canvas):
