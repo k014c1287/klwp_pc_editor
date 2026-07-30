@@ -23,6 +23,7 @@
 | KLWP形式 | ZIP、`preset.json`、画像、フォント | `klwp/archive.py` |
 | 値と状態 | 値オブジェクト、履歴、コレクション | `klwp/values.py` ほか |
 | Kode/SVG | 数式評価、SVG Path の解析とマスク化 | `klwp/formula.py`, `klwp/svg.py` |
+| 画像差分 | 実機スクショとの指標、ヒートマップ、品質ゲート | `klwp/pixel_diff.py`, `tools/compare_preview.py` |
 | Android転送 | adb検出、端末選択、保存済み成果物のpush | `klwp/adb.py`, `klwp/ui/adb_transfer.py` |
 
 ## 2. クラス図
@@ -130,6 +131,17 @@ classDiagram
         -_on_tree_drag(event)
         -_on_tree_release(event)
     }
+    class MultiSelectionMixin {
+        +cmd_copy()
+        +cmd_paste()
+        +cmd_duplicate()
+        +cmd_delete()
+        +cmd_move(difference)
+    }
+    class GroupingMixin {
+        +cmd_group_selection()
+        +cmd_ungroup_selection()
+    }
     class PreviewZoomMixin {
         +cmd_zoom_in()
         +cmd_zoom_out()
@@ -182,6 +194,8 @@ classDiagram
     PreviewValuesMixin <|-- EditorApp
     AdbTransferMixin <|-- EditorApp
     TreeDragMixin <|-- EditorApp
+    MultiSelectionMixin <|-- EditorApp
+    GroupingMixin <|-- EditorApp
     PreviewZoomMixin <|-- EditorApp
 
     CompositorLeafMixin <|-- CompositorMixin
@@ -197,7 +211,7 @@ classDiagram
     InteractionMixin ..> SnapEngine : adjust drag movement
     SnapEngine ..> SnapResult
     ResizeInteractionMixin ..> PositionMutation : preserve opposite edge
-    DocumentMixin ..> PositionMutation : duplicate shift
+    MultiSelectionMixin ..> PositionMutation : paste shift
     CanvasRendererMixin ..> ResizeHandleSet : selection handles
     CanvasRendererMixin ..> PreviewZoom : render scale
     PreviewZoomMixin ..> PreviewZoom : edit view
@@ -571,6 +585,25 @@ classDiagram
     class TreeReorder {
         +move(siblings, source, target, after)
     }
+    class ModuleSelection {
+        +from_memory(memory)
+        +items()
+        +primary_item()
+        +same_parent()
+        +remove_all()
+    }
+    class ModuleClipboard {
+        +capture(modules, archive)
+        +paste_into(archive)
+    }
+    class GroupGeometry {
+        +item_bounds()
+        +union(bounds)
+    }
+    class GroupPosition {
+        +inside(item, bounds, container)
+        +root(item, bounds)
+    }
     class PropertyPanelBuilder {
         +build()
     }
@@ -593,6 +626,36 @@ classDiagram
     }
     class JsonEditorDialog {
         +show()
+    }
+    class IconPickerDialog {
+        +show()
+    }
+    class IconCatalog {
+        +from_archive(archive)
+        +search(query)
+        +apply(item, entry)
+    }
+    class IconCatalogEntry {
+        +material(name, label, path)
+        +from_module(module)
+        +encoded_value()
+        +set_reference()
+    }
+    class KodeEditorDialog {
+        +show()
+    }
+    class KodeTargetCollection {
+        +names()
+        +source(target)
+        +valid(target)
+        +apply(target, source)
+    }
+    class KodeInspector {
+        +inspect()
+    }
+    class KodeSyntax {
+        +problem(source)
+        +unsupported_functions(source)
     }
     class ShapeDialog {
         +show()
@@ -646,12 +709,27 @@ classDiagram
     ModuleTreeBuilder ..> ModuleTreePresentation : row values
     EditorApp ..> TreeDragMixin : layer ordering
     TreeDragMixin ..> TreeReorder : commit drop
+    EditorApp ..> MultiSelectionMixin : multi item commands
+    MultiSelectionMixin ..> ModuleSelection : selected rows
+    MultiSelectionMixin ..> ModuleClipboard : modules and assets
+    EditorApp ..> GroupingMixin : group or dissolve
+    GroupingMixin ..> GroupGeometry : visual union
+    GroupingMixin ..> GroupPosition : preserve coordinates
     EditorApp ..> PropertyPanelBuilder : selected item
     PropertyPanelBuilder ..> AnchorChoices : anchor combobox conversion
     PropertyPanelBuilder ..> ColorControl : visual color editing
     ShapeDialog ..> ColorControl : creation color
     ColorControl *-- KlwpColor : AARRGGBB value
     EditorApp ..> JsonEditorDialog : raw JSON edit
+    PropertyPanelBuilder ..> IconPickerDialog : FontIcon selection
+    IconPickerDialog *-- IconCatalog : searchable entries
+    IconCatalog *-- IconCatalogEntry
+    IconCatalogEntry ..> SvgPathParser : encode/decode embedded SVG
+    PropertyPanelBuilder ..> KodeEditorDialog : live Kode edit
+    KodeEditorDialog *-- KodeTargetCollection : selected item fields
+    KodeEditorDialog ..> KodeInspector : validate and preview
+    KodeInspector ..> KodeSyntax : structural check
+    KodeInspector ..> FormulaParser : current preview values
     EditorApp ..> ShapeDialog : add shape
     EditorApp ..> BackgroundDialog : background
     BackgroundDialog ..> BackgroundImageBinding : formula and Global link
@@ -1086,38 +1164,214 @@ sequenceDiagram
     Canvas-->>User: 切替後の背景を表示
 ```
 
-### 3.11 ドラッグスナップ・整列ガイド・ルーラー
+### 3.11 実機スクショとのピクセル差分
 
-スナップは成果物のフィールドを直接扱わず、現在の描画境界とマウス移動量から補正後の移動量を返します。候補はキャンバス四辺・中心、100単位のルーラー、選択要素を除く全描画要素の左右端／上下端／中心です。画面上7pxを文書単位へ換算した許容幅内だけ吸着し、採用した候補位置を一時ガイドとしてCanvasへ重ねます。マウスを離すとガイドは消え、通常どおり1回の履歴へ記録されます。
+PC描画の回帰を目視だけに依存させないため、`PresetPreview`が指定日時・解像度で`.klwp`をヘッドレス描画し、`ComparableImages`が実機スクショと同一RGB解像度で比較します。Androidのステータスバー等は`ComparisonRegion`の四辺マージンで除外できます。
+
+MSEはRGB全チャンネルの画素二乗誤差平均、PSNRはMSEから算出し、SSIMはグレースケール画像全体の平均・分散・共分散によるグローバルSSIMです。`PixelDiffThresholds`は最大MSEと最小SSIMを品質ゲートとして評価します。`PixelDiff.write_report()`は正規化済み正解画像、PC描画、差分ヒートマップ、JSON指標を`artifacts/`へ出力します。
+
+```mermaid
+classDiagram
+    class ComparisonRegion {
+        -_margins
+        +apply(image)
+    }
+    class ComparableImages {
+        -_reference
+        -_actual
+        +cropped(region)
+        +mean_squared_error()
+        +structural_similarity()
+        +heatmap(gain)
+    }
+    class PixelDiffMetrics {
+        -_values
+        +as_mapping()
+    }
+    class PixelDiffThresholds {
+        -_limits
+        +failures(metrics)
+    }
+    class PixelDiff {
+        -_images
+        +measure()
+        +write_report(directory, heat_gain)
+    }
+    class PresetPreview {
+        -_archive
+        -_timestamp
+        +load(path, timestamp)
+        +render(dimensions)
+    }
+
+    PresetPreview ..> ComparableImages : actual
+    ComparableImages ..> ComparisonRegion : crop
+    PixelDiff *-- ComparableImages
+    PixelDiff ..> PixelDiffMetrics : measure
+    PixelDiffThresholds ..> PixelDiffMetrics : quality gate
+```
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Developer as 開発者
+    participant CLI as compare_preview.py
+    participant Preview as PresetPreview
+    participant Images as ComparableImages
+    participant Diff as PixelDiff
+    participant Gate as PixelDiffThresholds
+    participant Files as artifacts/pixel_diff
+
+    Developer->>CLI: reference・preset・日時・除外余白
+    CLI->>Preview: render(reference dimensions)
+    Preview-->>CLI: PC描画
+    CLI->>Images: referenceとPC描画をRGB正規化
+    CLI->>Images: ComparisonRegionでsystem UIを除外
+    CLI->>Diff: measure()
+    Diff-->>CLI: MSE・PSNR・SSIM
+    CLI->>Diff: write_report()
+    Diff->>Files: reference・actual・heatmap・metrics
+    CLI->>Gate: failures(metrics)
+    Gate-->>Developer: 合格は0、閾値違反は1
+```
+
+### 3.12 Kode数式のライブ編集
+
+選択要素の `text_expression` と `internal_formulas.<property>` を同じ画面で編集します。入力中は120msのデバウンス後にドル記号・括弧・引用符を検査し、構文が正しければ現在のプレビュー日時・天気・バッテリー等を用いて評価します。PC評価器が未対応の関数はKLWP互換性のため保存を妨げず、警告として表示します。適用時は対象フィールドだけを書き換え、他の未知キーと数式を保持して履歴へ記録します。
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor User as 利用者
-    participant Drag as InteractionMixin
-    participant Bounds as item_bounds
-    participant Targets as SnapTargets
-    participant Engine as SnapEngine
-    participant Result as SnapResult
-    participant Position as PositionMutation
-    participant Canvas as CanvasGuideMixin
+    participant Panel as PropertyPanelBuilder
+    participant Dialog as KodeEditorDialog
+    participant Targets as KodeTargetCollection
+    participant Syntax as KodeSyntax
+    participant Inspector as KodeInspector
+    participant Preview as RootGlobalValues
+    participant Formula as FormulaParser
     participant History as HistoryTimeline
 
-    User->>Drag: 選択要素をドラッグ
-    Drag->>Bounds: 選択要素と他要素の描画境界
-    Drag->>Targets: from_layout(document, bounds, selected)
-    Targets-->>Drag: 端・中心・100単位目盛り
-    Drag->>Engine: apply(bounds, raw movement, 7px換算)
-    Engine-->>Result: 補正移動量と採用ガイド
-    Result-->>Drag: movement / guides
-    Drag->>Position: move_by(snapped movement)
-    Drag->>Canvas: 再描画とマゼンタガイド
-    User->>Drag: マウスを離す
-    Drag->>Canvas: 一時ガイドを消去
-    Drag->>History: record(snapshot)
+    User->>Panel: Kode 数式をライブ編集
+    Panel->>Dialog: show(selected item)
+    Dialog->>Targets: names()
+    Targets-->>Dialog: text_expression / internal_formulas.*
+    User->>Dialog: 数式入力または関数候補を挿入
+    Dialog->>Syntax: problem(source)
+    alt 構造エラー
+        Syntax-->>Dialog: エラー内容
+        Dialog-->>User: 適用を抑止
+    else 構文OK
+        Dialog->>Preview: 現在のプレビュー値
+        Dialog->>Inspector: inspect(source, values)
+        Inspector->>Formula: eval_formula
+        Formula-->>Dialog: 評価結果
+        Dialog-->>User: ライブ評価を表示
+    end
+    User->>Dialog: 適用
+    Dialog->>Targets: apply(target, source)
+    Dialog->>History: record(snapshot)
 ```
 
-### 3.12 選択要素の編集ズームと背景パン
+### 3.13 FontIconの検索・選択
+
+FontIconは `icon_set` と `icon_icon` の組で保存します。`icon_icon` は名前だけではなく、KLWPがオフラインで読み込めるようSVGをgzip/Base64化した自己完結形式です。ピッカーは内蔵Materialアイコンに加え、現在のプリセットに存在するFontIconを走査してカスタムSVGも候補へ再利用します。選択時はアイコン関連の2フィールドだけを更新し、サイズ・色・数式等は保持します。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Panel as PropertyPanelBuilder
+    participant Dialog as IconPickerDialog
+    participant Catalog as IconCatalog
+    participant Entry as IconCatalogEntry
+    participant Archive as KlwpArchive
+    participant Svg as encode_kustom_icon
+    participant History as HistoryTimeline
+    participant Preview as CanvasRendererMixin
+
+    User->>Panel: FontIcon を選択
+    Panel->>Dialog: show(selected item)
+    Dialog->>Catalog: from_archive(archive)
+    Catalog->>Archive: 全FontIconModuleを走査
+    Catalog->>Entry: 既存の内蔵SVGを候補化
+    Catalog->>Svg: Material SVGをgzip/Base64化
+    Catalog-->>Dialog: 検索可能な候補一覧
+    User->>Dialog: 名前を検索してグリッドをクリック
+    Dialog->>Catalog: apply(item, entry)
+    Catalog->>Entry: icon_set / encoded_value
+    Dialog->>History: record(snapshot)
+    Dialog->>Preview: refresh selected item
+    Preview-->>User: 選択したアイコンを表示
+```
+
+### 3.14 複数要素のファイル間コピー＆ペースト
+
+Treeviewは拡張選択を使用し、従来の `selected` は右ペインとキャンバス操作に使う主選択、`selected_items` は一括操作対象として保持します。コピー時はモジュールツリーを深いコピーにし、文字列参照されるbitmaps・fonts・extrasも同じパッケージへ保存します。別ファイルへの貼付で同名アセットの内容が異なる場合は新しい名前を採番し、貼付モジュール内の `kfile://` 参照だけを書き換えます。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Tree as Treeview
+    participant Selection as ModuleSelection
+    participant Commands as MultiSelectionMixin
+    participant Clipboard as ModuleClipboard
+    participant Source as コピー元KlwpArchive
+    participant Target as 貼付先KlwpArchive
+    participant History as HistoryTimeline
+
+    User->>Tree: Ctrl/Shiftで複数行を選択
+    User->>Commands: Ctrl+C
+    Commands->>Selection: from_memory
+    Selection-->>Commands: 選択モジュール
+    Commands->>Clipboard: capture(modules, Source)
+    Clipboard->>Source: 参照画像・フォントを収集
+    User->>Commands: 別ファイルを開いてCtrl+V
+    Commands->>Clipboard: paste_into(Target)
+    Clipboard->>Target: アセットをコピー
+    alt 同名で内容が異なる
+        Clipboard->>Clipboard: 一意名を採番
+        Clipboard->>Clipboard: kfile参照を置換
+    end
+    Clipboard-->>Commands: 独立したモジュール複製
+    Commands->>Target: 選択位置の後へinsert
+    Commands->>History: record(snapshot)
+```
+
+### 3.15 複数要素のグループ化／解除
+
+同じ兄弟配列にある静的要素をOverlapLayerへまとめます。グループ化前に各要素の描画境界unionを求め、子要素をunion左上基準の四辺余白へ、作成レイヤーを元の親基準の位置へ変換します。解除時は逆変換するため画面座標は維持されます。位置数式またはアニメーションを持つ要素は意味を変えてしまうため安全側で拒否します。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Commands as GroupingMixin
+    participant Selection as ModuleSelection
+    participant Geometry as GroupGeometry
+    participant Position as GroupPosition
+    participant Items as viewgroup_items
+    participant History as HistoryTimeline
+
+    User->>Commands: グループ化
+    Commands->>Selection: 同じ親の2件以上か検証
+    Commands->>Geometry: item_bounds / union
+    Geometry-->>Commands: 画面境界と外接矩形
+    Commands->>Position: 子をunion基準の四辺余白へ変換
+    Commands->>Position: 新規OverlapLayerを親基準へ配置
+    Commands->>Items: 選択要素をレイヤーへ置換
+    Commands->>History: record(snapshot)
+    opt 解除
+        User->>Commands: グループ解除
+        Commands->>Geometry: 子の現在境界
+        Commands->>Position: 親コンテキストの座標へ逆変換
+        Commands->>Items: レイヤーを子要素へ置換
+        Commands->>History: record(snapshot)
+    end
+```
+
+### 3.16 選択要素の編集ズームと背景パン
 
 編集表示のズームは100～400%のプレビュー専用状態です。「選択を拡大」は要素の境界が表示領域の約70%へ収まる倍率を計算し、その中心へクロップ位置を移動します。`−` / `＋` とCtrl+マウスホイールは段階的な倍率変更、「全体表示」は100%と原点へ復帰します。ホイール操作は変更前のポインタ位置を文書座標へ変換し、新しい倍率からクロップ原点を逆算することで、ポインタ下の内容を固定したまま拡縮します。WindowsのMouseWheel形式とButton-4/5形式の両方を受け付けます。
 
@@ -1172,6 +1426,37 @@ sequenceDiagram
     Interaction->>Item: 文書座標の値だけを更新
 ```
 
+### 3.17 ドラッグスナップ・整列ガイド・ルーラー
+
+スナップは成果物のフィールドを直接扱わず、現在の描画境界とマウス移動量から補正後の移動量を返します。候補はキャンバス四辺・中心、100単位のルーラー、選択要素を除く全描画要素の左右端／上下端／中心です。画面上7pxを文書単位へ換算した許容幅内だけ吸着し、採用した候補位置を一時ガイドとしてCanvasへ重ねます。マウスを離すとガイドは消え、通常どおり1回の履歴へ記録されます。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Drag as InteractionMixin
+    participant Bounds as item_bounds
+    participant Targets as SnapTargets
+    participant Engine as SnapEngine
+    participant Result as SnapResult
+    participant Position as PositionMutation
+    participant Canvas as CanvasGuideMixin
+    participant History as HistoryTimeline
+
+    User->>Drag: 選択要素をドラッグ
+    Drag->>Bounds: 選択要素と他要素の描画境界
+    Drag->>Targets: from_layout(document, bounds, selected)
+    Targets-->>Drag: 端・中心・100単位目盛り
+    Drag->>Engine: apply(bounds, raw movement, 7px換算)
+    Engine-->>Result: 補正移動量と採用ガイド
+    Result-->>Drag: movement / guides
+    Drag->>Position: move_by(snapped movement)
+    Drag->>Canvas: 再描画とマゼンタガイド
+    User->>Drag: マウスを離す
+    Drag->>Canvas: 一時ガイドを消去
+    Drag->>History: record(snapshot)
+```
+
 ## 4. 状態とデータの境界
 
 ### 4.1 `ApplicationMemory` の主な内容
@@ -1182,7 +1467,7 @@ sequenceDiagram
 | 履歴 | `history`, `dirty` | 保存しない |
 | UI | `tree`, `canvas`, `status`, 各ボタン | 保存しない |
 | キャッシュ | `photo_cache`, `font_cache`, `_photo`, `_quality_preview`, `_item_bounds` | 保存しない |
-| 編集操作 | `selected`, `drag_state`, `resize_state`, `_view_pan_state`, `tree_drag` | 保存しない |
+| 編集操作 | `selected`, `selected_items`, `drag_state`, `resize_state`, `_view_pan_state`, `tree_drag`, `module_clipboard` | 保存しない |
 | プレビュー | `preview_scroll`, `preview_switches`, `preview_switch_progress`, `preview_values`, `preview_ts`, `preview_zoom`, `_view_origin`, `snap_guides` | 保存しない |
 | アニメーション | `_switch_transitions`, `_scroll_transition`, `_loop_started_at` | 保存しない |
 | イベント | `_event_regions`, `interaction_drag` | 保存しない |

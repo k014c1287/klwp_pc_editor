@@ -17,11 +17,15 @@ from .ui.properties import PropertyPanelMixin
 from .ui.preview_values import PreviewValuesMixin
 from .ui.adb_transfer import AdbTransferMixin
 from .ui.tree_drag import TreeDragMixin
+from .ui.multi_selection import MultiSelectionMixin
+from .ui.grouping import GroupingMixin
 from .ui.zoom import PreviewZoomMixin
 
 
 if HAS_TK:
     class EditorApp(BootstrapMixin,
+            MultiSelectionMixin,
+            GroupingMixin,
             DocumentMixin,
             PreviewModelMixin,
             CanvasRendererMixin,
@@ -60,7 +64,7 @@ if HAS_TK:
             ("shape_offset", "扇形・弧の角度"),
             ("paint_color", "色"),
             ("text_size", "文字サイズ"), ("text_family", "フォント"),
-            ("icon_icon", "アイコン名"), ("icon_size", "アイコンサイズ"),
+            ("icon_size", "アイコンサイズ"),
             ("bitmap_width", "画像幅"),
             ("bitmap_alpha", "画像不透明度 (0-100)"),
         ]

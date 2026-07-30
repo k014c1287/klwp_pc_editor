@@ -464,6 +464,23 @@ def decode_kustom_icon(icon):
     return name, paths or None, viewbox
 
 
+def encode_kustom_icon(name, paths, viewbox=(0.0, 0.0, 24.0, 24.0)):
+    """Encode SVG paths in the self-contained representation used by Kustom."""
+    viewbox_text = " ".join(map(_svg_number, viewbox))
+    path_text = "".join(f'<path d="{path}"/>' for path in paths)
+    svg = f'<svg viewBox="{viewbox_text}">{path_text}</svg>'
+    compressed = gzip.compress(svg.encode("utf-8"), mtime=0)
+    payload = base64.b64encode(compressed).decode("ascii")
+    return f"{name}#{payload}"
+
+
+def _svg_number(value):
+    number = float(value)
+    if number.is_integer():
+        return str(int(number))
+    return str(number)
+
+
 def _decoded_viewbox(match):
     if match is None:
         return None
