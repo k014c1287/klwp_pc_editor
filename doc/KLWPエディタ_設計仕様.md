@@ -575,6 +575,20 @@ classDiagram
     class JsonEditorDialog {
         +show()
     }
+    class IconPickerDialog {
+        +show()
+    }
+    class IconCatalog {
+        +from_archive(archive)
+        +search(query)
+        +apply(item, entry)
+    }
+    class IconCatalogEntry {
+        +material(name, label, path)
+        +from_module(module)
+        +encoded_value()
+        +set_reference()
+    }
     class KodeEditorDialog {
         +show()
     }
@@ -649,6 +663,10 @@ classDiagram
     ShapeDialog ..> ColorControl : creation color
     ColorControl *-- KlwpColor : AARRGGBB value
     EditorApp ..> JsonEditorDialog : raw JSON edit
+    PropertyPanelBuilder ..> IconPickerDialog : FontIcon selection
+    IconPickerDialog *-- IconCatalog : searchable entries
+    IconCatalog *-- IconCatalogEntry
+    IconCatalogEntry ..> SvgPathParser : encode/decode embedded SVG
     PropertyPanelBuilder ..> KodeEditorDialog : live Kode edit
     KodeEditorDialog *-- KodeTargetCollection : selected item fields
     KodeEditorDialog ..> KodeInspector : validate and preview
@@ -1197,7 +1215,39 @@ sequenceDiagram
     Dialog->>History: record(snapshot)
 ```
 
-### 3.13 選択要素の編集ズームと背景パン
+### 3.13 FontIconの検索・選択
+
+FontIconは `icon_set` と `icon_icon` の組で保存します。`icon_icon` は名前だけではなく、KLWPがオフラインで読み込めるようSVGをgzip/Base64化した自己完結形式です。ピッカーは内蔵Materialアイコンに加え、現在のプリセットに存在するFontIconを走査してカスタムSVGも候補へ再利用します。選択時はアイコン関連の2フィールドだけを更新し、サイズ・色・数式等は保持します。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 利用者
+    participant Panel as PropertyPanelBuilder
+    participant Dialog as IconPickerDialog
+    participant Catalog as IconCatalog
+    participant Entry as IconCatalogEntry
+    participant Archive as KlwpArchive
+    participant Svg as encode_kustom_icon
+    participant History as HistoryTimeline
+    participant Preview as CanvasRendererMixin
+
+    User->>Panel: FontIcon を選択
+    Panel->>Dialog: show(selected item)
+    Dialog->>Catalog: from_archive(archive)
+    Catalog->>Archive: 全FontIconModuleを走査
+    Catalog->>Entry: 既存の内蔵SVGを候補化
+    Catalog->>Svg: Material SVGをgzip/Base64化
+    Catalog-->>Dialog: 検索可能な候補一覧
+    User->>Dialog: 名前を検索してグリッドをクリック
+    Dialog->>Catalog: apply(item, entry)
+    Catalog->>Entry: icon_set / encoded_value
+    Dialog->>History: record(snapshot)
+    Dialog->>Preview: refresh selected item
+    Preview-->>User: 選択したアイコンを表示
+```
+
+### 3.14 選択要素の編集ズームと背景パン
 
 編集表示のズームは100～400%のプレビュー専用状態です。「選択を拡大」は要素の境界が表示領域の約70%へ収まる倍率を計算し、その中心へクロップ位置を移動します。`−` / `＋` とCtrl+マウスホイールは段階的な倍率変更、「全体表示」は100%と原点へ復帰します。ホイール操作は変更前のポインタ位置を文書座標へ変換し、新しい倍率からクロップ原点を逆算することで、ポインタ下の内容を固定したまま拡縮します。WindowsのMouseWheel形式とButton-4/5形式の両方を受け付けます。
 
