@@ -23,6 +23,7 @@ from klwp.ui.kode_dialog import (
     KodeInspector, KodeSyntax, KodeTargetCollection,
 )
 from klwp.ui.document import DocumentMixin
+from klwp.ui.interaction import InteractionMixin
 from klwp.ui.multi_selection import MultiSelectionMixin
 from klwp.ui.grouping import GroupingMixin
 from klwp.ui.menu_toolbar import EditorCommandCatalog
@@ -991,6 +992,37 @@ class SnapTests(unittest.TestCase):
 
         self.assertEqual(result.movement(), (17.0, 19.0))
         self.assertEqual(result.guides(), ())
+
+    def test_drag_keeps_raw_movement_and_defers_snap_correction(self):
+        selected = {}
+        editor = Mock()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory["_doc"] = (720.0, 1200.0)
+        editor.memory["_item_bounds"] = ((selected, (45.0, 40.0, 50.0, 20.0)),)
+        editor._guides_enabled.return_value = True
+        editor._bounds.return_value = (45.0, 40.0, 50.0, 20.0)
+
+        movement = InteractionMixin._guided_movement(
+            editor, selected, 4.0, 0.0, 1.0)
+
+        self.assertEqual(movement, (4.0, 0.0))
+        self.assertEqual(editor.memory["snap_correction"], (1.0, 0.0))
+        self.assertEqual(
+            editor.memory["snap_guides"], (("vertical", 100.0),))
+
+    def test_release_applies_deferred_snap_correction_once(self):
+        selected = {}
+        mutation = Mock()
+        editor = Mock()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory["selected"] = selected
+        editor.memory["snap_correction"] = (1.0, -2.0)
+        editor._position_mutation.return_value = mutation
+
+        InteractionMixin._commit_drag_snap(editor)
+
+        editor._position_mutation.assert_called_once_with(selected)
+        mutation.move_by.assert_called_once_with(1.0, -2.0)
 
 
 class BackgroundTests(unittest.TestCase):

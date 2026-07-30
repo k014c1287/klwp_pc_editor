@@ -83,6 +83,7 @@ classDiagram
     }
     class SnapResult {
         +movement()
+        +correction(horizontal, vertical)
         +guides()
     }
     class ZoomPreviewRendererMixin {
@@ -221,7 +222,7 @@ classDiagram
     ResizeInteractionMixin ..> ResizeSession
     InteractionMixin ..> PositionMutation : drag
     InteractionMixin ..> SnapTargets : ruler and item features
-    InteractionMixin ..> SnapEngine : adjust drag movement
+    InteractionMixin ..> SnapEngine : preview and release correction
     SnapEngine ..> SnapResult
     ResizeInteractionMixin ..> PositionMutation : preserve opposite edge
     MultiSelectionMixin ..> PositionMutation : paste shift
@@ -1459,7 +1460,7 @@ sequenceDiagram
 
 ### 3.17 ドラッグスナップ・整列ガイド・ルーラー
 
-スナップは成果物のフィールドを直接扱わず、現在の描画境界とマウス移動量から補正後の移動量を返します。候補はキャンバス四辺・中心、100単位のルーラー、選択要素を除く全描画要素の左右端／上下端／中心です。画面上7pxを文書単位へ換算した許容幅内だけ吸着し、採用した候補位置を一時ガイドとしてCanvasへ重ねます。マウスを離すとガイドは消え、通常どおり1回の履歴へ記録されます。
+スナップは成果物のフィールドを直接扱わず、現在の描画境界とマウス移動量からリリース時の補正量を返します。候補はキャンバス四辺・中心、100単位のルーラー、選択要素を除く全描画要素の左右端／上下端／中心です。画面上4pxを文書単位へ換算した許容幅内では候補位置を一時ガイドとしてCanvasへ重ねますが、ドラッグ中の要素は生のポインタ移動量へ追従します。マウスを離した時にだけ保持した補正量を1回適用し、その結果を履歴へ記録します。
 
 ```mermaid
 sequenceDiagram
@@ -1478,12 +1479,13 @@ sequenceDiagram
     Drag->>Bounds: 選択要素と他要素の描画境界
     Drag->>Targets: from_layout(document, bounds, selected)
     Targets-->>Drag: 端・中心・100単位目盛り
-    Drag->>Engine: apply(bounds, raw movement, 7px換算)
-    Engine-->>Result: 補正移動量と採用ガイド
-    Result-->>Drag: movement / guides
-    Drag->>Position: move_by(snapped movement)
+    Drag->>Engine: apply(bounds, raw movement, 4px換算)
+    Engine-->>Result: リリース用補正量と候補ガイド
+    Result-->>Drag: correction / guides
+    Drag->>Position: move_by(raw movement)
     Drag->>Canvas: 再描画とマゼンタガイド
     User->>Drag: マウスを離す
+    Drag->>Position: move_by(deferred correction)
     Drag->>Canvas: 一時ガイドを消去
     Drag->>History: record(snapshot)
 ```
@@ -1526,7 +1528,7 @@ sequenceDiagram
 | UI | `menu_bar`, `primary_toolbar`, `tree`, `canvas`, `status`, 各ボタン | 保存しない |
 | キャッシュ | `photo_cache`, `font_cache`, `_photo`, `_quality_preview`, `_item_bounds` | 保存しない |
 | 編集操作 | `selected`, `selected_items`, `drag_state`, `resize_state`, `_view_pan_state`, `tree_drag`, `module_clipboard` | 保存しない |
-| プレビュー | `preview_scroll`, `preview_switches`, `preview_switch_progress`, `preview_values`, `preview_ts`, `preview_zoom`, `_view_origin`, `snap_guides` | 保存しない |
+| プレビュー | `preview_scroll`, `preview_switches`, `preview_switch_progress`, `preview_values`, `preview_ts`, `preview_zoom`, `_view_origin`, `snap_guides`, `snap_correction` | 保存しない |
 | アニメーション | `_switch_transitions`, `_scroll_transition`, `_loop_started_at` | 保存しない |
 | イベント | `_event_regions`, `interaction_drag` | 保存しない |
 

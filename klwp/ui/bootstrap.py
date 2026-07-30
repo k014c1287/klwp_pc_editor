@@ -37,6 +37,7 @@ class BootstrapMixin:
         memory['drag_state'] = None
         memory['resize_state'] = None
         memory['snap_guides'] = ()
+        memory['snap_correction'] = (0.0, 0.0)
         memory['_view_pan_state'] = None
         memory['preview_zoom'] = 1.0
         memory['_view_origin'] = (0.0, 0.0)
