@@ -5,6 +5,8 @@ from .menu_toolbar import EditorMenuBuilder, PrimaryToolbarBuilder
 
 
 class EditorWindowBuilder:
+    NUDGE_KEYS = ("Left", "Right", "Up", "Down")
+
     def __init__(self, owner):
         self._owner = owner
 
@@ -24,6 +26,13 @@ class EditorWindowBuilder:
         owner.bind_all("<Control-y>", owner._on_redo_shortcut)
         owner.bind_all("<Control-Shift-Z>", owner._on_redo_shortcut)
         owner.bind("<Escape>", owner._on_clear_selection_shortcut)
+        self._application_nudge_shortcuts()
+
+    def _application_nudge_shortcuts(self):
+        owner = self._owner
+        for key in self.NUDGE_KEYS:
+            owner.bind_all(f"<{key}>", owner._on_nudge_shortcut)
+            owner.bind_all(f"<Shift-{key}>", owner._on_nudge_shortcut)
 
     def _module_tree(self, body):
         owner = self._owner
@@ -47,7 +56,7 @@ class EditorWindowBuilder:
 
     def _tree_nudge_shortcuts(self, tree):
         owner = self._owner
-        for key in ("Left", "Right", "Up", "Down"):
+        for key in self.NUDGE_KEYS:
             tree.bind(f"<{key}>", owner._on_nudge_shortcut)
             tree.bind(f"<Shift-{key}>", owner._on_nudge_shortcut)
 

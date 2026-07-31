@@ -12,7 +12,7 @@ import klwp_editor as ke
 from klwp.ui.property_panel import AnchorChoices, PropertyPanelBuilder
 from klwp.ui.color_control import KlwpColor
 from klwp.resize import ResizeHandleSet, ResizeSession
-from klwp.positioning import PositionMutation
+from klwp.positioning import KeyboardNudge, PositionMutation
 from klwp.snap import SnapEngine, SnapTargets
 from klwp.background import BackgroundImageBinding, BitmapGlobalCollection
 from klwp.icons import IconCatalog, MATERIAL_ICON_SET
@@ -652,6 +652,11 @@ class KeyboardShortcutTests(unittest.TestCase):
             "<Control-y>", owner._on_redo_shortcut)
         owner.bind_all.assert_any_call(
             "<Control-Shift-Z>", owner._on_redo_shortcut)
+        for key in ("Left", "Right", "Up", "Down"):
+            owner.bind_all.assert_any_call(
+                f"<{key}>", owner._on_nudge_shortcut)
+            owner.bind_all.assert_any_call(
+                f"<Shift-{key}>", owner._on_nudge_shortcut)
 
     def test_tree_arrow_keys_bind_to_nudge_command(self):
         owner = Mock()
@@ -664,6 +669,32 @@ class KeyboardShortcutTests(unittest.TestCase):
                 f"<{key}>", owner._on_nudge_shortcut)
             tree.bind.assert_any_call(
                 f"<Shift-{key}>", owner._on_nudge_shortcut)
+
+    def test_nudge_ignores_arrow_keys_while_editing_values(self):
+        widget = Mock()
+        widget.winfo_class.return_value = "TEntry"
+        event = type(
+            "Event", (), {
+                "keysym": "Left", "state": 0, "widget": widget,
+            })()
+
+        nudge = KeyboardNudge.from_event(event)
+
+        self.assertIsNone(nudge)
+
+    def test_nudge_accepts_arrow_keys_from_preview_canvas(self):
+        widget = Mock()
+        widget.winfo_class.return_value = "Canvas"
+        event = type(
+            "Event", (), {
+                "keysym": "Left", "state": 0, "widget": widget,
+            })()
+
+        nudge = KeyboardNudge.from_event(event)
+        mutation = Mock()
+        nudge.apply_to(mutation)
+
+        mutation.move_by.assert_called_once_with(-1.0, 0.0)
 
 
 class PreviewPageTests(unittest.TestCase):

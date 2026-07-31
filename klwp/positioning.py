@@ -16,6 +16,10 @@ UPWARD_OFFSET_ANCHORS = (
 class KeyboardNudge:
     """Translate one arrow-key event into a visual KLWP movement."""
 
+    EDITING_WIDGETS = {
+        "Entry", "TEntry", "Text", "TCombobox",
+        "Spinbox", "TSpinbox", "Scale", "TScale", "Listbox",
+    }
     DIRECTIONS = {
         "Left": (-1.0, 0.0),
         "Right": (1.0, 0.0),
@@ -32,6 +36,8 @@ class KeyboardNudge:
 
     @staticmethod
     def from_event(event):
+        if KeyboardNudge._editing_widget(event):
+            return None
         directions = KeyboardNudge.DIRECTIONS
         direction = directions.get(event.keysym)
         if direction is None:
@@ -39,6 +45,15 @@ class KeyboardNudge:
         state = int(getattr(event, "state", 0))
         accelerated = bool(state & KeyboardNudge.SHIFT_MASK)
         return KeyboardNudge(direction, accelerated)
+
+    @staticmethod
+    def _editing_widget(event):
+        widget = getattr(event, "widget", None)
+        if widget is None:
+            return False
+        widget_class = widget.winfo_class()
+        editing_widgets = KeyboardNudge.EDITING_WIDGETS
+        return widget_class in editing_widgets
 
     def apply_to(self, mutation):
         horizontal, vertical = self._values["direction"]
