@@ -123,6 +123,11 @@ classDiagram
         -_values
         +move_by(horizontal, vertical)
     }
+    class KeyboardNudge {
+        -_values
+        +from_event(event)
+        +apply_to(mutation)
+    }
     class SettingsMixin
     class PropertyPanelMixin
     class PreviewValuesMixin
@@ -225,7 +230,9 @@ classDiagram
     InteractionMixin ..> SnapEngine : preview and release correction
     SnapEngine ..> SnapResult
     ResizeInteractionMixin ..> PositionMutation : preserve opposite edge
-    MultiSelectionMixin ..> PositionMutation : paste shift
+    MultiSelectionMixin ..> KeyboardNudge : arrow key event
+    KeyboardNudge ..> PositionMutation : visual movement
+    MultiSelectionMixin ..> PositionMutation : paste and keyboard nudge
     CanvasRendererMixin ..> ResizeHandleSet : selection handles
     CanvasRendererMixin ..> PreviewZoom : render scale
     PreviewZoomMixin ..> PreviewZoom : edit view
@@ -1515,6 +1522,37 @@ sequenceDiagram
     Toolbar->>Catalog: toolbar_items()
     Catalog-->>Toolbar: 常用11操作と追加メニュー
     Toolbar->>Memory: primary_toolbar・履歴ボタンを保持
+```
+
+### 3.19 要素ツリーからのキーボード微調整
+
+左ペインの `Treeview` で要素を選択している場合、矢印キーを選択要素の座標微調整として扱います。通常は1 KLWP単位、Shift併用時は10 KLWP単位です。`ModuleSelection` が返す全選択要素へ同じ視覚方向を適用するため、親レイヤーが異なる複数選択にも対応します。バインドはアプリケーション全体にも設定しますが、文字・数値入力、プルダウン、スライダーなど矢印キー自体に意味がある編集ウィジェットでは微調整を行いません。
+
+`KeyboardNudge` はTkイベントのキー方向とShift状態を移動量へ変換します。実際の保存値は `PositionMutation` が更新し、ルート要素ではアンカー相対オフセット、レイヤー内要素では四辺余白へ変換します。操作後はプレビューとプロパティ欄だけを更新し、ツリーを再構築しないため、フォーカスを維持したまま連続入力できます。1回のキー入力を1件の履歴として記録します。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Tree as Treeview
+    participant Commands as MultiSelectionMixin
+    participant Selection as ModuleSelection
+    participant Nudge as KeyboardNudge
+    participant Position as PositionMutation
+    participant History as HistoryTimeline
+    participant Preview as CanvasRendererMixin
+
+    User->>Tree: 矢印キー / Shift+矢印キー
+    Tree->>Commands: _on_nudge_shortcut(event)
+    Commands->>Selection: from_memory(memory)
+    Commands->>Nudge: from_event(event)
+    loop 選択された全要素
+        Commands->>Position: PositionMutation(item, is_root)
+        Nudge->>Position: apply_to(mutation)
+    end
+    Commands->>History: record(snapshot)
+    Commands->>Preview: _render()
+    Commands->>Commands: _build_props()
 ```
 
 ## 4. 状態とデータの境界

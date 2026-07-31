@@ -12,7 +12,7 @@ import klwp_editor as ke
 from klwp.ui.property_panel import AnchorChoices, PropertyPanelBuilder
 from klwp.ui.color_control import KlwpColor
 from klwp.resize import ResizeHandleSet, ResizeSession
-from klwp.positioning import PositionMutation
+from klwp.positioning import KeyboardNudge, PositionMutation
 from klwp.snap import SnapEngine, SnapTargets
 from klwp.background import BackgroundImageBinding, BitmapGlobalCollection
 from klwp.icons import IconCatalog, MATERIAL_ICON_SET
@@ -458,6 +458,73 @@ class ModuleTreeTests(unittest.TestCase):
         self.assertIs(selection.primary_item(), second)
         self.assertTrue(selection.same_parent())
 
+    def test_arrow_key_nudges_selected_root_item_one_unit(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        item = ke.make_module("shape")
+        item["position_anchor"] = "TOPLEFT"
+        item["position_offset_x"] = 12.0
+        item["position_offset_y"] = 34.0
+        archive.modules().append(item)
+        editor = _MultiEditor()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory["archive"] = archive
+        editor.memory["tree"] = Mock()
+        editor.memory["tree"].selection.return_value = ("item",)
+        editor.memory["tree"].focus.return_value = "item"
+        editor.memory["tree_map"] = {
+            "item": (item, archive.modules()),
+        }
+        editor._mark_dirty = Mock()
+        editor._render = Mock()
+        editor._build_props = Mock()
+        event = type("Event", (), {"keysym": "Right", "state": 0})()
+
+        result = editor._on_nudge_shortcut(event)
+
+        self.assertEqual(result, "break")
+        self.assertEqual(item["position_offset_x"], 13.0)
+        self.assertEqual(item["position_offset_y"], 34.0)
+        editor._mark_dirty.assert_called_once_with()
+        editor._render.assert_called_once_with()
+        editor._build_props.assert_called_once_with()
+
+    def test_shift_arrow_nudges_every_selected_nested_item_ten_units(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        layer = ke.make_module("layer")
+        first = ke.make_module("shape")
+        second = ke.make_module("text")
+        for item in (first, second):
+            item["position_anchor"] = "CENTER"
+            item["position_padding_top"] = 0.0
+            item["position_padding_bottom"] = 0.0
+        children = layer["viewgroup_items"]
+        children.extend((first, second))
+        archive.modules().append(layer)
+        editor = _MultiEditor()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory["archive"] = archive
+        editor.memory["tree"] = Mock()
+        editor.memory["tree"].selection.return_value = ("first", "second")
+        editor.memory["tree"].focus.return_value = "second"
+        editor.memory["tree_map"] = {
+            "first": (first, children),
+            "second": (second, children),
+        }
+        editor._mark_dirty = Mock()
+        editor._render = Mock()
+        editor._build_props = Mock()
+        event = type("Event", (), {"keysym": "Up", "state": 1})()
+
+        result = editor._on_nudge_shortcut(event)
+
+        self.assertEqual(result, "break")
+        for item in (first, second):
+            self.assertEqual(item["position_padding_top"], -10.0)
+            self.assertEqual(item["position_padding_bottom"], 10.0)
+        editor._mark_dirty.assert_called_once_with()
+
     def test_module_clipboard_renames_conflicting_bitmap_on_cross_file_paste(self):
         bitmap_name = "bitmaps/IMG" + "1" * 32
         reference = "kfile://org.kustom.provider/" + bitmap_name
@@ -585,6 +652,49 @@ class KeyboardShortcutTests(unittest.TestCase):
             "<Control-y>", owner._on_redo_shortcut)
         owner.bind_all.assert_any_call(
             "<Control-Shift-Z>", owner._on_redo_shortcut)
+        for key in ("Left", "Right", "Up", "Down"):
+            owner.bind_all.assert_any_call(
+                f"<{key}>", owner._on_nudge_shortcut)
+            owner.bind_all.assert_any_call(
+                f"<Shift-{key}>", owner._on_nudge_shortcut)
+
+    def test_tree_arrow_keys_bind_to_nudge_command(self):
+        owner = Mock()
+        tree = Mock()
+
+        EditorWindowBuilder(owner)._tree_nudge_shortcuts(tree)
+
+        for key in ("Left", "Right", "Up", "Down"):
+            tree.bind.assert_any_call(
+                f"<{key}>", owner._on_nudge_shortcut)
+            tree.bind.assert_any_call(
+                f"<Shift-{key}>", owner._on_nudge_shortcut)
+
+    def test_nudge_ignores_arrow_keys_while_editing_values(self):
+        widget = Mock()
+        widget.winfo_class.return_value = "TEntry"
+        event = type(
+            "Event", (), {
+                "keysym": "Left", "state": 0, "widget": widget,
+            })()
+
+        nudge = KeyboardNudge.from_event(event)
+
+        self.assertIsNone(nudge)
+
+    def test_nudge_accepts_arrow_keys_from_preview_canvas(self):
+        widget = Mock()
+        widget.winfo_class.return_value = "Canvas"
+        event = type(
+            "Event", (), {
+                "keysym": "Left", "state": 0, "widget": widget,
+            })()
+
+        nudge = KeyboardNudge.from_event(event)
+        mutation = Mock()
+        nudge.apply_to(mutation)
+
+        mutation.move_by.assert_called_once_with(-1.0, 0.0)
 
 
 class PreviewPageTests(unittest.TestCase):
@@ -1308,6 +1418,31 @@ class HistoryTests(unittest.TestCase):
         restored = editor.memory["archive"].modules()
         self.assertEqual(len(restored), 1)
         self.assertEqual(restored[0]["internal_type"], "TextModule")
+
+    def test_keyboard_nudge_can_be_undone(self):
+        editor = self.editor()
+        item = ke.make_module("shape")
+        item["position_anchor"] = "TOPLEFT"
+        initial_vertical = item["position_offset_y"]
+        editor.memory["archive"].modules().append(item)
+        editor._mark_dirty()
+        editor.memory["selected"] = item
+        editor.memory["tree"] = Mock()
+        editor.memory["tree"].selection.return_value = ("item-row",)
+        editor.memory["tree"].focus.return_value = "item-row"
+        editor.memory["tree_map"] = {
+            "item-row": (item, editor.memory["archive"].modules()),
+        }
+        editor._render = Mock()
+        editor._build_props = Mock()
+        event = type("Event", (), {"keysym": "Down", "state": 0})()
+
+        editor._on_nudge_shortcut(event)
+
+        self.assertEqual(item["position_offset_y"], initial_vertical + 1.0)
+        editor.cmd_undo()
+        restored = editor.memory["archive"].modules()[0]
+        self.assertEqual(restored["position_offset_y"], initial_vertical)
 
 
 @unittest.skipUnless(ke.HAS_TK and ke.HAS_PIL, "Tkinter/Pillow required")
