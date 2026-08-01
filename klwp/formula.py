@@ -633,7 +633,7 @@ class FormulaFunctions:
 
     def _browser_information(self, arguments):
         key = _formula_text(arguments.optional(1)).lower()
-        values = {"gpt_ans": "Preview broadcast value"}
+        values = {"gpt_ans": ""}
         return PreviewFormulaValues(self._context).named(
             "broadcast", key, values, "")
 
