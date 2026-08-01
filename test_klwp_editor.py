@@ -26,7 +26,8 @@ from klwp.ui.document import DocumentMixin
 from klwp.ui.interaction import InteractionMixin
 from klwp.ui.multi_selection import MultiSelectionMixin
 from klwp.ui.grouping import GroupingMixin
-from klwp.ui.menu_toolbar import EditorCommandCatalog
+from klwp.ui.menu_toolbar import EditorCommandCatalog, ToolbarPresentation
+from klwp.ui.theme import EditorPalette, EditorTheme
 from klwp.ui.window import EditorWindowBuilder
 from klwp.adb import AdbDevices, AdbTransfer
 from klwp.preview.pages import PresetPageCount, PreviewPageCounter
@@ -638,6 +639,31 @@ class MenuToolbarTests(unittest.TestCase):
             "コピー", "貼付", "複製", "削除", "Androidへ転送"))
         self.assertEqual(
             sum(item[0] == "separator" for item in items), 4)
+
+    def test_toolbar_presentation_keeps_labels_and_explains_actions(self):
+        labels = ("新規", "保存", "元に戻す", "削除", "Androidへ転送")
+        for label in labels:
+            self.assertIn(label, ToolbarPresentation.display(label))
+            self.assertTrue(ToolbarPresentation.tooltip(label))
+
+    def test_dark_theme_configures_ttk_and_tk_widgets(self):
+        owner = Mock()
+        style = Mock()
+        style.theme_names.return_value = ("vista", "clam")
+        palette = EditorPalette.colors()
+
+        with patch("klwp.ui.theme.ttk.Style", return_value=style):
+            EditorTheme(owner).apply()
+
+        style.theme_use.assert_called_once_with("clam")
+        style.configure.assert_any_call(
+            "TFrame", background=palette["background"])
+        style.map.assert_any_call(
+            "Treeview", background=[("selected", palette["accent"])],
+            foreground=[("selected", "#ffffff")])
+        owner.configure.assert_called_once_with(
+            background=palette["background"])
+        self.assertGreaterEqual(owner.option_add.call_count, 8)
 
 
 class KeyboardShortcutTests(unittest.TestCase):
