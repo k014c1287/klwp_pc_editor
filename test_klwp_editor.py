@@ -35,11 +35,13 @@ from klwp.pixel_diff import (
     PresetPreview)
 from klwp.runtime import Resampling
 from klwp.preview.zoom import CachedPreviewImage, PreviewPan, PreviewZoom
+from klwp.preview.timeline import PreviewTimeline
 from klwp.ui.tree import ModuleTreePresentation
 from klwp.ui.tree_drag import TreeDragMixin, TreeReorder
 from klwp.clipboard import ModuleClipboard
 from klwp.selection import ModuleSelection
 from klwp.ui.zoom import PreviewZoomMixin
+from klwp.ui.time_preview import TimePreviewMixin
 
 
 ROOT = Path(__file__).resolve().parent
@@ -51,6 +53,11 @@ class _TreeEditor(DocumentMixin, TreeDragMixin):
 
 
 class _MultiEditor(MultiSelectionMixin, GroupingMixin, DocumentMixin):
+    def _set_status(self, text):
+        self.memory["last_status"] = text
+
+
+class _TimeEditor(TimePreviewMixin):
     def _set_status(self, text):
         self.memory["last_status"] = text
 
@@ -695,6 +702,63 @@ class KeyboardShortcutTests(unittest.TestCase):
         nudge.apply_to(mutation)
 
         mutation.move_by.assert_called_once_with(-1.0, 0.0)
+
+
+class PreviewTimeTests(unittest.TestCase):
+    def test_timeline_changes_time_without_changing_date(self):
+        source = datetime(2026, 7, 22, 8, 15, 30)
+        timestamp = source.timestamp() * 1000.0
+
+        changed = PreviewTimeline(timestamp).at_hour(18.5)
+        actual = datetime.fromtimestamp(changed / 1000.0)
+
+        self.assertEqual(actual.date(), source.date())
+        self.assertEqual((actual.hour, actual.minute), (18, 30))
+
+    def test_manual_scrubbing_stops_live_mode_and_renders(self):
+        editor = _TimeEditor()
+        editor.memory = ke.ApplicationMemory()
+        live = Mock()
+        variable = Mock()
+        label = Mock()
+        source = datetime(2026, 7, 22, 8, 0).timestamp() * 1000.0
+        editor.memory["preview_ts"] = source
+        editor.memory["preview_time_live_var"] = live
+        editor.memory["preview_time_var"] = variable
+        editor.memory["preview_time_label"] = label
+        editor.memory["_time_after_id"] = "timer"
+        editor.memory["_updating_time_control"] = False
+        editor.after_cancel = Mock()
+        editor._render = Mock()
+
+        editor._on_preview_time_changed("18.5")
+
+        actual = datetime.fromtimestamp(editor.memory["preview_ts"] / 1000.0)
+        self.assertEqual((actual.hour, actual.minute), (18, 30))
+        live.set.assert_called_once_with(False)
+        editor.after_cancel.assert_called_once_with("timer")
+        editor._render.assert_called_once_with()
+        label.configure.assert_called_with(text="18:30:00")
+
+    def test_live_tick_uses_current_time_and_schedules_one_second(self):
+        editor = _TimeEditor()
+        editor.memory = ke.ApplicationMemory()
+        live = Mock()
+        live.get.return_value = True
+        editor.memory["preview_time_live_var"] = live
+        editor.memory["preview_ts"] = 0
+        editor.memory["_time_after_id"] = "previous"
+        editor.memory["_updating_time_control"] = False
+        editor.after = Mock(return_value="next")
+        editor._render = Mock()
+
+        with patch("klwp.ui.time_preview.time.time", return_value=100.5):
+            editor._time_tick()
+
+        self.assertEqual(editor.memory["preview_ts"], 100500)
+        editor.after.assert_called_once_with(1000, editor._time_tick)
+        self.assertEqual(editor.memory["_time_after_id"], "next")
+        editor._render.assert_called_once_with()
 
 
 class PreviewPageTests(unittest.TestCase):
