@@ -2,6 +2,8 @@
 
 from ..shared import *  # noqa: F401,F403
 from ..preview.values import default_preview_values
+from ..recent import RecentFileStore
+from .welcome import WelcomeDialog
 from .theme import EditorTheme
 from .window import EditorWindowBuilder
 
@@ -21,6 +23,7 @@ class BootstrapMixin:
         self._reset_history()
         self._start_preview_clock()
         self._refresh_all()
+        self.after_idle(self._show_welcome)
 
     def _initialize_document_memory(self):
         memory = self.memory
@@ -37,6 +40,7 @@ class BootstrapMixin:
         memory['font_cache'] = {}
         memory['device_res'] = (1080, 2400)
         memory['preview_values'] = default_preview_values()
+        memory['recent_files'] = RecentFileStore()
         memory['drag_state'] = None
         memory['resize_state'] = None
         memory['snap_guides'] = ()
@@ -65,3 +69,6 @@ class BootstrapMixin:
         memory = self.memory
         memory['history'] = HistoryTimeline(self.HISTORY_LIMIT)
         memory['dirty'] = False
+
+    def _show_welcome(self):
+        WelcomeDialog(self).show()

@@ -37,12 +37,14 @@ from klwp.pixel_diff import (
     PresetPreview)
 from klwp.runtime import Resampling
 from klwp.preview.zoom import CachedPreviewImage, PreviewPan, PreviewZoom
+from klwp.recent import RecentFileStore
 from klwp.preview.timeline import PreviewTimeline
 from klwp.ui.tree import ModuleTreePresentation
 from klwp.ui.tree_drag import TreeDragMixin, TreeReorder
 from klwp.clipboard import ModuleClipboard
 from klwp.selection import ModuleSelection
 from klwp.ui.zoom import PreviewZoomMixin
+from klwp.ui.welcome import TemplateCatalog
 from klwp.ui.time_preview import TimePreviewMixin
 
 
@@ -683,6 +685,77 @@ class MenuToolbarTests(unittest.TestCase):
         owner.configure.assert_called_once_with(
             background=palette["background"])
         self.assertGreaterEqual(owner.option_add.call_count, 8)
+
+
+class WelcomeAndRecentFileTests(unittest.TestCase):
+    def test_recent_files_are_deduplicated_and_missing_files_are_removed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            storage = root / "recent.json"
+            first = root / "first.klwp"
+            second = root / "second.klwp"
+            first.write_bytes(b"first")
+            second.write_bytes(b"second")
+            store = RecentFileStore(storage)
+            store.remember(first)
+            store.remember(second)
+            store.remember(first)
+            second.unlink()
+
+            self.assertEqual(store.paths(), (str(first.resolve()),))
+
+    def test_recent_store_recovers_from_invalid_json(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            storage = Path(temporary) / "recent.json"
+            storage.write_text("not-json", encoding="utf-8")
+
+            self.assertEqual(RecentFileStore(storage).paths(), ())
+
+    def test_template_catalog_only_lists_klwp_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "b.klwp").write_bytes(b"b")
+            (root / "a.klwp").write_bytes(b"a")
+            (root / "note.txt").write_text("ignore", encoding="utf-8")
+
+            names = tuple(path.name for path in TemplateCatalog(root).entries())
+
+            self.assertEqual(names, ("a.klwp", "b.klwp"))
+
+    def test_template_open_forces_save_as_without_recent_history(self):
+        editor = _TreeEditor()
+        editor.memory = ke.ApplicationMemory()
+        archive = ke.KlwpArchive()
+        archive.new()
+        archive["path"] = "sample/example.klwp"
+        editor.memory["archive"] = archive
+        editor.memory["status"] = Mock()
+        editor._confirm_discard = Mock(return_value=True)
+        editor._open_archive_path = Mock(return_value=True)
+        editor._update_title = Mock()
+
+        opened = editor.cmd_open_template("sample/example.klwp")
+
+        self.assertTrue(opened)
+        self.assertIsNone(archive["path"])
+        editor._open_archive_path.assert_called_once_with(
+            "sample/example.klwp", False)
+
+    def test_normal_open_records_recent_file_after_success(self):
+        editor = _TreeEditor()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory["archive"] = {
+            "preset": {"preset_info": {"ts": 123}}}
+        editor.memory["recent_files"] = Mock()
+        editor._load_archive = Mock(return_value=True)
+        editor._apply_document_dimensions = Mock()
+        editor._after_document_loaded = Mock()
+
+        opened = editor._open_archive_path("work.klwp", True)
+
+        self.assertTrue(opened)
+        editor.memory["recent_files"].remember.assert_called_once_with(
+            "work.klwp")
 
 
 class KeyboardShortcutTests(unittest.TestCase):
