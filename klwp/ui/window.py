@@ -2,6 +2,7 @@
 
 from ..shared import *  # noqa: F401,F403
 from .menu_toolbar import EditorMenuBuilder, PrimaryToolbarBuilder
+from .theme import EditorPalette
 
 
 class EditorWindowBuilder:
@@ -74,17 +75,18 @@ class EditorWindowBuilder:
 
     @staticmethod
     def _configure_module_tree(tree):
+        palette = EditorPalette.colors()
         tree.heading("#0", text="要素", anchor="w")
         tree.heading("kind", text="種類", anchor="w")
         tree.heading("priority", text="前面順", anchor="center")
         tree.column("#0", width=190, minwidth=120, stretch=True)
         tree.column("kind", width=92, minwidth=72, stretch=False)
         tree.column("priority", width=62, minwidth=55, stretch=False)
-        tree.tag_configure("hidden", foreground="#808080")
+        tree.tag_configure("hidden", foreground=palette["muted"])
         tree.tag_configure(
-            "drop_before", background="#dbeafe", foreground="#1d4ed8")
+            "drop_before", background="#263a66", foreground="#dbeafe")
         tree.tag_configure(
-            "drop_after", background="#dcfce7", foreground="#166534")
+            "drop_after", background="#244837", foreground="#dcfce7")
 
     def _preview(self, body):
         frame = ttk.Frame(body)
@@ -121,9 +123,10 @@ class EditorWindowBuilder:
 
     def _canvas(self, frame):
         owner = self._owner
+        palette = EditorPalette.colors()
         canvas = tk.Canvas(
             frame, width=owner.CANVAS_W, height=owner.CANVAS_H,
-            bg="#101018", highlightthickness=0)
+            bg=palette["canvas"], highlightthickness=0)
         canvas.pack(padx=8, pady=(4, 8))
         canvas.bind("<ButtonPress-1>", owner._on_canvas_press)
         canvas.bind("<B1-Motion>", owner._on_canvas_drag)

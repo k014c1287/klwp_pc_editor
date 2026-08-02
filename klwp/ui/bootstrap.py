@@ -2,12 +2,14 @@
 
 from ..shared import *  # noqa: F401,F403
 from ..preview.values import default_preview_values
+from .theme import EditorTheme
 from .window import EditorWindowBuilder
 
 
 class BootstrapMixin:
     def __init__(self):
         super().__init__()
+        EditorTheme(self).apply()
         self.memory = ApplicationMemory()
         self.title(APP_TITLE)
         self.geometry("1280x820")
