@@ -13,6 +13,7 @@ from klwp.ui.property_panel import AnchorChoices, PropertyPanelBuilder
 from klwp.ui.color_control import KlwpColor
 from klwp.resize import ResizeHandleSet, ResizeSession
 from klwp.positioning import KeyboardNudge, PositionMutation
+from klwp.alignment import AlignmentLayout
 from klwp.snap import SnapEngine, SnapTargets
 from klwp.background import BackgroundImageBinding, BitmapGlobalCollection
 from klwp.icons import IconCatalog, MATERIAL_ICON_SET
@@ -26,6 +27,7 @@ from klwp.ui.document import DocumentMixin
 from klwp.ui.interaction import InteractionMixin
 from klwp.ui.multi_selection import MultiSelectionMixin
 from klwp.ui.grouping import GroupingMixin
+from klwp.ui.alignment import AlignmentMixin
 from klwp.ui.menu_toolbar import EditorCommandCatalog
 from klwp.ui.window import EditorWindowBuilder
 from klwp.adb import AdbDevices, AdbTransfer
@@ -50,7 +52,8 @@ class _TreeEditor(DocumentMixin, TreeDragMixin):
     pass
 
 
-class _MultiEditor(MultiSelectionMixin, GroupingMixin, DocumentMixin):
+class _MultiEditor(
+        MultiSelectionMixin, GroupingMixin, AlignmentMixin, DocumentMixin):
     def _set_status(self, text):
         self.memory["last_status"] = text
 
@@ -609,6 +612,85 @@ class ModuleTreeTests(unittest.TestCase):
         editor._refresh_all.assert_called_once_with()
 
 
+class AlignmentTests(unittest.TestCase):
+    def test_alignment_uses_outer_selection_edges_and_centers(self):
+        entries = (
+            ("first", (10.0, 10.0, 20.0, 20.0)),
+            ("second", (50.0, 20.0, 10.0, 40.0)),
+        )
+        layout = AlignmentLayout(entries)
+
+        horizontal = layout.movements("center_horizontal")
+        vertical = layout.movements("center_vertical")
+
+        self.assertEqual(horizontal, (
+            ("first", 15.0, 0.0), ("second", -20.0, 0.0)))
+        self.assertEqual(vertical, (
+            ("first", 0.0, 15.0), ("second", 0.0, -5.0)))
+
+    def test_distribution_keeps_outer_items_and_equalizes_gaps(self):
+        entries = (
+            ("first", (0.0, 0.0, 10.0, 10.0)),
+            ("second", (20.0, 5.0, 10.0, 10.0)),
+            ("third", (60.0, 30.0, 20.0, 10.0)),
+        )
+
+        movements = AlignmentLayout(entries).movements(
+            "distribute_horizontal")
+
+        self.assertEqual(movements, (
+            ("first", 0.0, 0.0),
+            ("second", 10.0, 0.0),
+            ("third", 0.0, 0.0)))
+
+    def test_align_command_updates_root_offsets_and_records_once(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        first = ke.make_module("shape")
+        second = ke.make_module("shape")
+        for item, horizontal in ((first, 10.0), (second, 50.0)):
+            item["position_anchor"] = "TOPLEFT"
+            item["position_offset_x"] = horizontal
+            item["position_offset_y"] = 20.0
+        archive.modules().extend((first, second))
+        editor = _MultiEditor()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory["archive"] = archive
+        editor.memory["tree"] = Mock()
+        editor.memory["tree"].selection.return_value = ("first", "second")
+        editor.memory["tree"].focus.return_value = "second"
+        editor.memory["tree_map"] = {
+            "first": (first, archive.modules()),
+            "second": (second, archive.modules()),
+        }
+        editor._bounds = lambda item: (
+            (10.0, 20.0, 20.0, 20.0) if item is first
+            else (50.0, 20.0, 20.0, 20.0))
+        editor._mark_dirty = Mock()
+        editor._render = Mock()
+        editor._build_props = Mock()
+
+        editor.cmd_align_left()
+
+        self.assertEqual(first["position_offset_x"], 10.0)
+        self.assertEqual(second["position_offset_x"], 10.0)
+        editor._mark_dirty.assert_called_once_with()
+        editor._render.assert_called_once_with()
+
+    def test_distribution_requires_three_items_in_same_layer(self):
+        editor = _MultiEditor()
+        editor._module_selection = Mock()
+        selection = editor._module_selection.return_value
+        selection.count.return_value = 2
+        selection.same_parent.return_value = True
+        editor._set_status = Mock()
+
+        editor.cmd_distribute_horizontal()
+
+        editor._set_status.assert_called_once_with(
+            "同じレイヤー内の要素を3件以上選択してください")
+
+
 class MenuToolbarTests(unittest.TestCase):
     def test_menu_groups_keep_every_toolbar_command_available(self):
         groups = EditorCommandCatalog(Mock()).menu_groups()
@@ -621,7 +703,12 @@ class MenuToolbarTests(unittest.TestCase):
             "ファイル": ("新規", "開く", "保存", "名前を付けて保存"),
             "編集": ("元に戻す", "やり直す", "コピー", "貼付", "複製", "削除"),
             "追加": ("テキスト", "図形", "アイコン", "画像", "レイヤー"),
-            "配置": ("グループ化", "グループ解除", "背面へ", "前面へ"),
+            "配置": (
+                "グループ化", "グループ解除",
+                "左揃え", "水平方向中央揃え", "右揃え",
+                "上揃え", "垂直方向中央揃え", "下揃え",
+                "水平方向に均等配置", "垂直方向に均等配置",
+                "背面へ", "前面へ"),
             "プロジェクト": (
                 "グローバル管理", "プレビュー値",
                 "背景設定", "画像管理", "端末解像度"),
