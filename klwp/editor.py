@@ -20,11 +20,13 @@ from .ui.tree_drag import TreeDragMixin
 from .ui.multi_selection import MultiSelectionMixin
 from .ui.grouping import GroupingMixin
 from .ui.zoom import PreviewZoomMixin
+from .ui.layer_actions import LayerActionsMixin
 
 
 if HAS_TK:
     class EditorApp(BootstrapMixin,
             MultiSelectionMixin,
+            LayerActionsMixin,
             GroupingMixin,
             DocumentMixin,
             PreviewModelMixin,

@@ -39,14 +39,16 @@ class EditorWindowBuilder:
         frame = ttk.Frame(body)
         self._module_tree_header(frame)
         tree = ttk.Treeview(
-            frame, columns=("kind", "priority"),
+            frame, columns=("visible", "kind", "priority"),
             show="tree headings", selectmode="extended")
         self._configure_module_tree(tree)
         tree.pack(fill="both", expand=True)
         tree.bind("<<TreeviewSelect>>", owner._on_tree_select)
+        tree.bind("<ButtonPress-1>", owner._on_tree_visibility_click)
         tree.bind("<ButtonPress-1>", owner._on_tree_press, add="+")
         tree.bind("<B1-Motion>", owner._on_tree_drag, add="+")
         tree.bind("<ButtonRelease-1>", owner._on_tree_release, add="+")
+        tree.bind("<Button-3>", owner._on_tree_context_menu)
         tree.bind("<Delete>", owner._on_delete_shortcut)
         tree.bind("<Control-c>", owner._on_copy_shortcut)
         tree.bind("<Control-v>", owner._on_paste_shortcut)
@@ -75,9 +77,11 @@ class EditorWindowBuilder:
     @staticmethod
     def _configure_module_tree(tree):
         tree.heading("#0", text="要素", anchor="w")
+        tree.heading("visible", text="表示", anchor="center")
         tree.heading("kind", text="種類", anchor="w")
         tree.heading("priority", text="前面順", anchor="center")
         tree.column("#0", width=190, minwidth=120, stretch=True)
+        tree.column("visible", width=44, minwidth=44, stretch=False)
         tree.column("kind", width=92, minwidth=72, stretch=False)
         tree.column("priority", width=62, minwidth=55, stretch=False)
         tree.tag_configure("hidden", foreground="#808080")
