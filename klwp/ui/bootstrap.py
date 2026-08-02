@@ -19,6 +19,7 @@ class BootstrapMixin:
         EditorWindowBuilder(self).build()
         self._reset_preview_state()
         self._reset_history()
+        self._start_preview_clock()
         self._refresh_all()
 
     def _initialize_document_memory(self):
@@ -57,6 +58,8 @@ class BootstrapMixin:
         memory['_zoom_render_after_id'] = None
         memory['_loop_started_at'] = None
         memory['_event_regions'] = []
+        memory['_time_after_id'] = None
+        memory['_updating_time_control'] = False
 
     def _initialize_history_memory(self):
         memory = self.memory

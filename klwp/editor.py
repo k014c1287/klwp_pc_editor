@@ -20,6 +20,7 @@ from .ui.tree_drag import TreeDragMixin
 from .ui.multi_selection import MultiSelectionMixin
 from .ui.grouping import GroupingMixin
 from .ui.zoom import PreviewZoomMixin
+from .ui.time_preview import TimePreviewMixin
 
 
 if HAS_TK:
@@ -42,6 +43,7 @@ if HAS_TK:
             AdbTransferMixin,
             TreeDragMixin,
             PreviewZoomMixin,
+            TimePreviewMixin,
             tk.Tk):
         CANVAS_W, CANVAS_H = 420, 760
         HISTORY_LIMIT = 50

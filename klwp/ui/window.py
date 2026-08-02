@@ -91,6 +91,7 @@ class EditorWindowBuilder:
     def _preview(self, body):
         frame = ttk.Frame(body)
         self._zoom_controls(frame)
+        self._time_controls(frame)
         self._canvas(frame)
         self._animation_controls(frame)
         status = ttk.Label(frame, text="")
@@ -136,6 +137,25 @@ class EditorWindowBuilder:
         canvas.bind("<Control-Button-4>", owner._on_preview_zoom_wheel)
         canvas.bind("<Control-Button-5>", owner._on_preview_zoom_wheel)
         owner.memory['canvas'] = canvas
+
+    def _time_controls(self, frame):
+        owner = self._owner
+        controls = ttk.Frame(frame)
+        controls.pack(fill="x", padx=8, pady=(4, 0))
+        live = tk.BooleanVar(value=True)
+        owner.memory["preview_time_live_var"] = live
+        ttk.Checkbutton(
+            controls, text="現在時刻", variable=live,
+            command=owner._on_live_time_changed).pack(side="left")
+        variable = tk.DoubleVar(value=0.0)
+        owner.memory["preview_time_var"] = variable
+        scale = ttk.Scale(
+            controls, from_=0.0, to=24.0, variable=variable,
+            command=owner._on_preview_time_changed, length=210)
+        scale.pack(side="left", fill="x", expand=True, padx=(6, 4))
+        label = ttk.Label(controls, text="00:00:00", width=8, anchor="e")
+        label.pack(side="left")
+        owner.memory["preview_time_label"] = label
 
     def _animation_controls(self, frame):
         controls = ttk.Frame(frame)
