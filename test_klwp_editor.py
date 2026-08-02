@@ -40,6 +40,9 @@ from klwp.ui.tree_drag import TreeDragMixin, TreeReorder
 from klwp.clipboard import ModuleClipboard
 from klwp.selection import ModuleSelection
 from klwp.ui.zoom import PreviewZoomMixin
+from klwp.ui.command_palette import (
+    CommandPaletteDialog, CommandPaletteEntries,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -609,6 +612,37 @@ class ModuleTreeTests(unittest.TestCase):
         editor._refresh_all.assert_called_once_with()
 
 
+class CommandPaletteTests(unittest.TestCase):
+    def test_palette_filters_menu_commands_by_label_and_category(self):
+        groups = EditorCommandCatalog(Mock()).menu_groups()
+        entries = CommandPaletteEntries(groups)
+
+        save_labels = entries.filtered("保存").labels()
+        device_labels = entries.filtered("デバイス").labels()
+
+        self.assertEqual(save_labels, (
+            "ファイル › 保存", "ファイル › 名前を付けて保存"))
+        self.assertEqual(device_labels, ("デバイス › Androidへ転送",))
+        self.assertNotIn("編集 › None", entries.labels())
+
+    def test_palette_executes_selected_command_and_closes(self):
+        command = Mock()
+        groups = (("テスト", (("実行", command, ""),)),)
+        entries = CommandPaletteEntries(groups)
+        dialog = CommandPaletteDialog(Mock(), entries)
+        listing = Mock()
+        listing.curselection.return_value = (0,)
+        window = Mock()
+        dialog._state["list"] = listing
+        dialog._state["window"] = window
+
+        result = dialog._execute()
+
+        self.assertEqual(result, "break")
+        window.destroy.assert_called_once_with()
+        command.assert_called_once_with()
+
+
 class MenuToolbarTests(unittest.TestCase):
     def test_menu_groups_keep_every_toolbar_command_available(self):
         groups = EditorCommandCatalog(Mock()).menu_groups()
@@ -619,7 +653,9 @@ class MenuToolbarTests(unittest.TestCase):
 
         self.assertEqual(actual, {
             "ファイル": ("新規", "開く", "保存", "名前を付けて保存"),
-            "編集": ("元に戻す", "やり直す", "コピー", "貼付", "複製", "削除"),
+            "編集": (
+                "元に戻す", "やり直す", "コピー", "貼付", "複製", "削除",
+                "コマンドパレット…"),
             "追加": ("テキスト", "図形", "アイコン", "画像", "レイヤー"),
             "配置": ("グループ化", "グループ解除", "背面へ", "前面へ"),
             "プロジェクト": (
@@ -652,6 +688,8 @@ class KeyboardShortcutTests(unittest.TestCase):
             "<Control-y>", owner._on_redo_shortcut)
         owner.bind_all.assert_any_call(
             "<Control-Shift-Z>", owner._on_redo_shortcut)
+        owner.bind_all.assert_any_call(
+            "<Control-k>", owner._on_command_palette_shortcut)
         for key in ("Left", "Right", "Up", "Down"):
             owner.bind_all.assert_any_call(
                 f"<{key}>", owner._on_nudge_shortcut)

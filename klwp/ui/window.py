@@ -25,6 +25,7 @@ class EditorWindowBuilder:
         owner.bind_all("<Control-z>", owner._on_undo_shortcut)
         owner.bind_all("<Control-y>", owner._on_redo_shortcut)
         owner.bind_all("<Control-Shift-Z>", owner._on_redo_shortcut)
+        owner.bind_all("<Control-k>", owner._on_command_palette_shortcut)
         owner.bind("<Escape>", owner._on_clear_selection_shortcut)
         self._application_nudge_shortcuts()
 
