@@ -72,6 +72,8 @@ class EditorCommandCatalog:
             (None, None, ""),
             ("保存", owner.cmd_save, ""),
             ("名前を付けて保存", owner.cmd_save_as, ""),
+            (None, None, ""),
+            ("PNGを書き出す…", owner.cmd_export_png, ""),
         )
 
     def _edit_items(self):

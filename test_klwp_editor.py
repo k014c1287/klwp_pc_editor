@@ -46,6 +46,7 @@ from klwp.ui.tree_drag import TreeDragMixin, TreeReorder
 from klwp.clipboard import ModuleClipboard
 from klwp.selection import ModuleSelection
 from klwp.ui.zoom import PreviewZoomMixin
+from klwp.ui.export_png import PngExportMixin
 from klwp.ui.command_palette import (
     CommandPaletteDialog, CommandPaletteEntries,
 )
@@ -75,6 +76,11 @@ class _TimeEditor(TimePreviewMixin):
 
 class _LayerEditor(
         MultiSelectionMixin, LayerActionsMixin, DocumentMixin):
+    def _set_status(self, text):
+        self.memory["last_status"] = text
+
+
+class _PngExportEditor(PngExportMixin):
     def _set_status(self, text):
         self.memory["last_status"] = text
 
@@ -730,6 +736,39 @@ class ModuleTreeTests(unittest.TestCase):
         editor._refresh_all.assert_called_once_with()
 
 
+class PngExportTests(unittest.TestCase):
+    def test_export_uses_device_resolution_without_changing_document_state(self):
+        editor = _PngExportEditor()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory["device_res"] = (1080, 2400)
+        editor.memory["dirty"] = True
+        editor.memory["archive"] = {"path": "wallpaper.klwp"}
+        image = Mock()
+        editor.render_to_image = Mock(return_value=image)
+
+        editor._write_png("preview.png")
+
+        editor.render_to_image.assert_called_once_with(1080, 2400)
+        image.save.assert_called_once_with("preview.png", format="PNG")
+        self.assertTrue(editor.memory["dirty"])
+        self.assertEqual(editor.memory["archive"]["path"], "wallpaper.klwp")
+        self.assertEqual(
+            editor.memory["last_status"], "PNGを書き出しました: preview.png")
+
+    def test_export_command_uses_png_file_dialog(self):
+        editor = _PngExportEditor()
+        editor._export_png = Mock()
+
+        with patch("klwp.ui.export_png.HAS_PIL", True), patch(
+                "klwp.ui.export_png.filedialog.asksaveasfilename",
+                return_value="chosen.png") as dialog:
+            editor.cmd_export_png()
+
+        dialog.assert_called_once_with(
+            defaultextension=".png", filetypes=[("PNG image", "*.png")])
+        editor._export_png.assert_called_once_with("chosen.png")
+
+
 class CommandPaletteTests(unittest.TestCase):
     def test_palette_filters_menu_commands_by_label_and_category(self):
         groups = EditorCommandCatalog(Mock()).menu_groups()
@@ -849,7 +888,9 @@ class MenuToolbarTests(unittest.TestCase):
         }
 
         self.assertEqual(actual, {
-            "ファイル": ("新規", "開く", "保存", "名前を付けて保存"),
+            "ファイル": (
+                "新規", "開く", "保存", "名前を付けて保存",
+                "PNGを書き出す…"),
             "編集": (
                 "元に戻す", "やり直す", "コピー", "貼付", "複製", "削除",
                 "コマンドパレット…"),

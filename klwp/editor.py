@@ -20,6 +20,7 @@ from .ui.tree_drag import TreeDragMixin
 from .ui.multi_selection import MultiSelectionMixin
 from .ui.grouping import GroupingMixin
 from .ui.zoom import PreviewZoomMixin
+from .ui.export_png import PngExportMixin
 from .ui.command_palette import CommandPaletteMixin
 from .ui.layer_actions import LayerActionsMixin
 from .ui.alignment import AlignmentMixin
@@ -47,6 +48,7 @@ if HAS_TK:
             AdbTransferMixin,
             TreeDragMixin,
             PreviewZoomMixin,
+            PngExportMixin,
             CommandPaletteMixin,
             AlignmentMixin,
             TimePreviewMixin,
