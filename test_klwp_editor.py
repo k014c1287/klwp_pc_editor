@@ -28,20 +28,26 @@ from klwp.ui.interaction import InteractionMixin
 from klwp.ui.multi_selection import MultiSelectionMixin
 from klwp.ui.grouping import GroupingMixin
 from klwp.ui.alignment import AlignmentMixin
-from klwp.ui.menu_toolbar import EditorCommandCatalog
+from klwp.ui.menu_toolbar import EditorCommandCatalog, ToolbarPresentation
+from klwp.ui.theme import EditorPalette, EditorTheme
 from klwp.ui.window import EditorWindowBuilder
 from klwp.adb import AdbDevices, AdbTransfer
 from klwp.preview.pages import PresetPageCount, PreviewPageCounter
+from klwp.preview.values import PREVIEW_VALUE_FIELDS, default_preview_values
 from klwp.pixel_diff import (
     ComparableImages, ComparisonRegion, PixelDiff, PixelDiffThresholds,
     PresetPreview)
 from klwp.runtime import Resampling
 from klwp.preview.zoom import CachedPreviewImage, PreviewPan, PreviewZoom
+from klwp.recent import RecentFileStore
+from klwp.preview.timeline import PreviewTimeline
 from klwp.ui.tree import ModuleTreePresentation
 from klwp.ui.tree_drag import TreeDragMixin, TreeReorder
 from klwp.clipboard import ModuleClipboard
 from klwp.selection import ModuleSelection
 from klwp.ui.zoom import PreviewZoomMixin
+from klwp.ui.welcome import TemplateCatalog
+from klwp.ui.time_preview import TimePreviewMixin
 
 
 ROOT = Path(__file__).resolve().parent
@@ -54,6 +60,11 @@ class _TreeEditor(DocumentMixin, TreeDragMixin):
 
 class _MultiEditor(
         MultiSelectionMixin, GroupingMixin, AlignmentMixin, DocumentMixin):
+    def _set_status(self, text):
+        self.memory["last_status"] = text
+
+
+class _TimeEditor(TimePreviewMixin):
     def _set_status(self, text):
         self.memory["last_status"] = text
 
@@ -98,6 +109,17 @@ class FormulaTests(unittest.TestCase):
         self.assertEqual(ke.eval_formula("$wi(temp)$", values), -3.0)
         self.assertEqual(ke.eval_formula("$mi(title)$", values), "Edited Song")
         self.assertEqual(ke.eval_formula("$li(loc)$", values), "Sapporo")
+
+    def test_broadcast_value_is_blank_until_explicitly_entered(self):
+        values = {"__preview__": {"broadcast": {"gpt_ans": "回答"}}}
+
+        self.assertEqual(ke.eval_formula("$br(tasker, gpt_ans)$"), "")
+        self.assertEqual(
+            ke.eval_formula("$br(tasker, gpt_ans)$", values), "回答")
+        self.assertEqual(default_preview_values()["broadcast"]["gpt_ans"], "")
+        self.assertIn(
+            ("broadcast", "gpt_ans", "Broadcast / Tasker値"),
+            PREVIEW_VALUE_FIELDS)
 
     def test_kode_live_editor_reports_structural_errors(self):
         self.assertEqual(KodeSyntax.problem("$if(1, yes, no)$"), "")
@@ -726,6 +748,102 @@ class MenuToolbarTests(unittest.TestCase):
         self.assertEqual(
             sum(item[0] == "separator" for item in items), 4)
 
+    def test_toolbar_presentation_keeps_labels_and_explains_actions(self):
+        labels = ("新規", "保存", "元に戻す", "削除", "Androidへ転送")
+        for label in labels:
+            self.assertIn(label, ToolbarPresentation.display(label))
+            self.assertTrue(ToolbarPresentation.tooltip(label))
+
+    def test_dark_theme_configures_ttk_and_tk_widgets(self):
+        owner = Mock()
+        style = Mock()
+        style.theme_names.return_value = ("vista", "clam")
+        palette = EditorPalette.colors()
+
+        with patch("klwp.ui.theme.ttk.Style", return_value=style):
+            EditorTheme(owner).apply()
+
+        style.theme_use.assert_called_once_with("clam")
+        style.configure.assert_any_call(
+            "TFrame", background=palette["background"])
+        style.map.assert_any_call(
+            "Treeview", background=[("selected", palette["accent"])],
+            foreground=[("selected", "#ffffff")])
+        owner.configure.assert_called_once_with(
+            background=palette["background"])
+        self.assertGreaterEqual(owner.option_add.call_count, 8)
+
+
+class WelcomeAndRecentFileTests(unittest.TestCase):
+    def test_recent_files_are_deduplicated_and_missing_files_are_removed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            storage = root / "recent.json"
+            first = root / "first.klwp"
+            second = root / "second.klwp"
+            first.write_bytes(b"first")
+            second.write_bytes(b"second")
+            store = RecentFileStore(storage)
+            store.remember(first)
+            store.remember(second)
+            store.remember(first)
+            second.unlink()
+
+            self.assertEqual(store.paths(), (str(first.resolve()),))
+
+    def test_recent_store_recovers_from_invalid_json(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            storage = Path(temporary) / "recent.json"
+            storage.write_text("not-json", encoding="utf-8")
+
+            self.assertEqual(RecentFileStore(storage).paths(), ())
+
+    def test_template_catalog_only_lists_klwp_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "b.klwp").write_bytes(b"b")
+            (root / "a.klwp").write_bytes(b"a")
+            (root / "note.txt").write_text("ignore", encoding="utf-8")
+
+            names = tuple(path.name for path in TemplateCatalog(root).entries())
+
+            self.assertEqual(names, ("a.klwp", "b.klwp"))
+
+    def test_template_open_forces_save_as_without_recent_history(self):
+        editor = _TreeEditor()
+        editor.memory = ke.ApplicationMemory()
+        archive = ke.KlwpArchive()
+        archive.new()
+        archive["path"] = "sample/example.klwp"
+        editor.memory["archive"] = archive
+        editor.memory["status"] = Mock()
+        editor._confirm_discard = Mock(return_value=True)
+        editor._open_archive_path = Mock(return_value=True)
+        editor._update_title = Mock()
+
+        opened = editor.cmd_open_template("sample/example.klwp")
+
+        self.assertTrue(opened)
+        self.assertIsNone(archive["path"])
+        editor._open_archive_path.assert_called_once_with(
+            "sample/example.klwp", False)
+
+    def test_normal_open_records_recent_file_after_success(self):
+        editor = _TreeEditor()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory["archive"] = {
+            "preset": {"preset_info": {"ts": 123}}}
+        editor.memory["recent_files"] = Mock()
+        editor._load_archive = Mock(return_value=True)
+        editor._apply_document_dimensions = Mock()
+        editor._after_document_loaded = Mock()
+
+        opened = editor._open_archive_path("work.klwp", True)
+
+        self.assertTrue(opened)
+        editor.memory["recent_files"].remember.assert_called_once_with(
+            "work.klwp")
+
 
 class KeyboardShortcutTests(unittest.TestCase):
     def test_control_z_and_control_y_bind_to_history_commands(self):
@@ -782,6 +900,63 @@ class KeyboardShortcutTests(unittest.TestCase):
         nudge.apply_to(mutation)
 
         mutation.move_by.assert_called_once_with(-1.0, 0.0)
+
+
+class PreviewTimeTests(unittest.TestCase):
+    def test_timeline_changes_time_without_changing_date(self):
+        source = datetime(2026, 7, 22, 8, 15, 30)
+        timestamp = source.timestamp() * 1000.0
+
+        changed = PreviewTimeline(timestamp).at_hour(18.5)
+        actual = datetime.fromtimestamp(changed / 1000.0)
+
+        self.assertEqual(actual.date(), source.date())
+        self.assertEqual((actual.hour, actual.minute), (18, 30))
+
+    def test_manual_scrubbing_stops_live_mode_and_renders(self):
+        editor = _TimeEditor()
+        editor.memory = ke.ApplicationMemory()
+        live = Mock()
+        variable = Mock()
+        label = Mock()
+        source = datetime(2026, 7, 22, 8, 0).timestamp() * 1000.0
+        editor.memory["preview_ts"] = source
+        editor.memory["preview_time_live_var"] = live
+        editor.memory["preview_time_var"] = variable
+        editor.memory["preview_time_label"] = label
+        editor.memory["_time_after_id"] = "timer"
+        editor.memory["_updating_time_control"] = False
+        editor.after_cancel = Mock()
+        editor._render = Mock()
+
+        editor._on_preview_time_changed("18.5")
+
+        actual = datetime.fromtimestamp(editor.memory["preview_ts"] / 1000.0)
+        self.assertEqual((actual.hour, actual.minute), (18, 30))
+        live.set.assert_called_once_with(False)
+        editor.after_cancel.assert_called_once_with("timer")
+        editor._render.assert_called_once_with()
+        label.configure.assert_called_with(text="18:30:00")
+
+    def test_live_tick_uses_current_time_and_schedules_one_second(self):
+        editor = _TimeEditor()
+        editor.memory = ke.ApplicationMemory()
+        live = Mock()
+        live.get.return_value = True
+        editor.memory["preview_time_live_var"] = live
+        editor.memory["preview_ts"] = 0
+        editor.memory["_time_after_id"] = "previous"
+        editor.memory["_updating_time_control"] = False
+        editor.after = Mock(return_value="next")
+        editor._render = Mock()
+
+        with patch("klwp.ui.time_preview.time.time", return_value=100.5):
+            editor._time_tick()
+
+        self.assertEqual(editor.memory["preview_ts"], 100500)
+        editor.after.assert_called_once_with(1000, editor._time_tick)
+        self.assertEqual(editor.memory["_time_after_id"], "next")
+        editor._render.assert_called_once_with()
 
 
 class PreviewPageTests(unittest.TestCase):

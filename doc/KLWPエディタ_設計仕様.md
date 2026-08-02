@@ -2,7 +2,7 @@
 
 この文書は、現在の `klwp_editor.py` と `klwp/` パッケージを基準にした設計資料です。図はすべて Mermaid 形式で記述しています。
 
-- 対象実装: 2026-07-22 時点
+- 対象実装: 2026-08-02 時点
 - 実行入口: `klwp_editor.py`
 - 合成ルート: `klwp/editor.py` の `EditorApp`
 - 永続化対象: ZIP 形式の `.klwp` ファイル
@@ -1602,3 +1602,251 @@ sequenceDiagram
 - 要素ツリーの順序・ドロップ制約を変更した場合は「2.5」と「3.9」を更新する。
 - `ApplicationMemory` の状態分類を増やした場合は「4.1」を更新する。
 - Mermaid 図のクラス名とメソッド名は、コード上の識別子と一致させる。
+- 実装判断の優先基準は `モジュール設計の哲学.md` と一致させる。
+
+## 6. KLWPファイルと互換性の契約
+
+### 6.1 ZIPアーカイブ構造
+
+`.klwp` の実体はZIPアーカイブです。既知エントリーだけを再生成するのではなく、未知エントリーも `ArchiveContents` で保持して往復保存します。
+
+| エントリー | 内容 |
+| --- | --- |
+| `preset.json` | プリセット情報、ルート、モジュール、Global、数式、イベント |
+| `bitmaps/IMG<32桁hex>` | 内蔵画像。参照先は `kfile://org.kustom.provider/bitmaps/IMG<32桁hex>` |
+| `fonts/*.ttf` | 内蔵フォント。参照先は `kfile://org.kustom.provider/fonts/<名前>.ttf` |
+| `komponents/` | プリセットによって存在するコンポーネント関連データ |
+| `preset_thumb_portrait.jpg` | 縦向きサムネイル |
+| `preset_thumb_landscape.jpg` | 横向きサムネイル |
+| その他 | 未知エントリーとして内容を保持 |
+
+画像IDは `IMG` とUUIDの32桁hexで構成します。旧エディタが生成した28桁IDを読み込んだ場合、`BitmapReferenceNormalizer` がZIP内の名前と `preset.json` 内の全参照を同時に移行します。書出し時のZIPエントリーは、KLWP実機の形式に合わせてUTF-8フラグとdata descriptorフラグを組み合わせた `0x808` を使用します。
+
+### 6.2 `preset.json` のトップ構造
+
+```json
+{
+  "preset_info": {
+    "width": 540,
+    "height": 1200,
+    "title": "...",
+    "id": "uuid",
+    "ts": 0,
+    "release": 381531008,
+    "features": "LOCATION WEATHER ...",
+    "xscreens": 2
+  },
+  "preset_root": {
+    "internal_type": "RootLayerModule",
+    "background_type": "IMAGE",
+    "background_bitmap": "kfile://...",
+    "background_color": "#AARRGGBB",
+    "internal_formulas": {},
+    "internal_globals": {},
+    "globals_list": {},
+    "viewgroup_items": []
+  }
+}
+```
+
+`preset_info.width/height` は過去の編集解像度を表す場合があり、現在の端末レイアウト寸法としては使用しません。描画ドキュメントは端末解像度から算出します。総ページ数は `xscreens + 1` として解釈します。
+
+`background_type` が省略された実プリセットも存在します。省略時は `SOLID` と解釈し、未知キーは削除しません。保存時は `preset_info.ts` を更新します。
+
+### 6.3 主なモジュール種別
+
+| `internal_type` | 意味と扱い |
+| --- | --- |
+| `RootLayerModule` | プリセットのルート |
+| `OverlapLayerModule` | 子要素を同一領域に重ねるレイヤー |
+| `StackLayerModule` | `config_stacking` と `config_margin` で子要素を順番に整列するレイヤー |
+| `ShapeModule` | RECT、CIRCLE、OVAL、PATHなどの図形 |
+| `TextModule` | 固定文字列またはKode数式を含むテキスト |
+| `FontIconModule` | KLWP内蔵SVG形式のアイコン |
+| `ProgressModule` | リングまたはバー型の進捗表示 |
+| `BitmapModule` | 背景とは別に配置する画像要素 |
+| `KomponentModule` | 作者情報とローカルGlobalを持てるサブレイヤー群 |
+
+Komponentの `viewgroup_items` は通常のレイヤーと同じ再帰描画経路を使い、`config_scale_value` を描画、境界、タップ領域へ一様に適用します。
+
+### 6.4 実データから確定した主要キー
+
+- 色は `paint_color: #AARRGGBB`。`paint_style: STROKE` は枠線、線幅は `paint_stroke` を優先し、旧互換として `paint_stroke_width` も解釈する
+- 図形は `shape_width/height/corners/type/path` を使用する。PATHは0～100座標系のM/L/H/V/A/C/Q/Zを解釈する
+- 図形種別はsampleを基準とし、正方形は `shape_type` 省略、直角三角形は `RTRIANGLE`、六角形は `EXAGON`、角丸四角形は `SQUIRCLE` とする
+- `fx_mask: BLURRED` はすりガラス、`CLIP_NEXT` は次要素を切り抜くマスク、`fx_shadow: OUTER` は外側グローとして近似描画する
+- 画像塗りは `fx_gradient: BITMAP` と `fx_gradient_bitmap`、画像要素は `bitmap_bitmap/width/alpha` を使う
+- BitmapModuleの高さは保存された `bitmap_height` より元画像の縦横比を優先する
+- テキストは `text_expression/size/align/filter/family` を使用する。`text_size_type: FIXED_WIDTH` では `text_size` を枠幅として扱う
+- FontIconの `icon_icon` は `名前#base64(gzip(SVG全文))`。`icon_set` は検索元セット情報として保持する
+- 時計は `config_rotate_mode: CLOCK_SECOND` などを評価する
+- Progressは `style_style/style_size/style_height` を使用する
+- Stackは `config_stacking` に `HORIZONTAL` を含む場合は横、それ以外は縦に並べる
+- 可視性、数式、アニメーション、タップは `config_visible`、`internal_toggles`、`internal_formulas`、`internal_animations`、`internal_events` に保持する
+- すべての配置キーは `position_` 接頭辞付きで保存する
+
+### 6.5 往復保存の原則
+
+1. 編集対象以外の辞書キーを保持する。
+2. 未知のモジュール、数式、イベントを削除しない。
+3. 画像・フォント参照を変更するときは、参照先アセットと全参照元を同時に更新する。
+4. UIやプレビューの一時状態を `preset.json` へ保存しない。
+5. 公式旧版と実成果物のload→save→loadを回帰試験する。
+
+## 7. 座標・配置の保存契約
+
+### 7.1 ドキュメント単位
+
+- 画面幅は端末解像度によらず720 KLWP単位とする
+- 高さは `720 × 端末縦解像度 ÷ 端末横解像度` で算出する
+- 1080×2400端末のドキュメント高さは1600単位になる
+- `preset_info.width/height` は配置計算へ使用しない
+
+### 7.2 アンカー、オフセット、余白
+
+1. アンカー未指定時の既定値はルート・レイヤー内とも `CENTER` とする。
+2. ルート直下の要素は `position_offset_x/y` をアンカーからの距離として保存する。左上からの絶対座標ではない。
+3. TOP系アンカーではYオフセットの増加が下方向、CENTER/BOTTOM系では増加が上方向になる。
+4. Overlap/Stack内の子要素は `position_padding_left/right/top/bottom` を使用する。子要素へ新しい `position_offset_x/y` を作らない。
+5. 左・上アンカーは左・上余白、右・下アンカーは右・下余白、中央系アンカーは両側余白差の半分で配置する。
+6. 子要素の余白は、親レイヤーのwrap寸法にも含める。
+7. Stackの子は配列順に整列し、四辺余白と `config_margin` を加味する。
+8. Overlapは全子要素の描画境界unionからwrap寸法を求める。
+
+`PositionMutation` はドラッグ、直接リサイズ、複製、キーボード微調整で共通利用し、見た目の移動方向を保存形式に応じたオフセットまたは余白へ変換します。配置の読取と変更で別の既定アンカーを使ってはいけません。
+
+### 7.3 配置回帰の代表値
+
+| 対象 | 確認値 |
+| --- | --- |
+| 時計すりガラス | TOPLEFT、offset 405/135、275×310、corners 36、BLURRED |
+| ひとこと | CENTER、offset -160/+320。正のY保存値は見た目上方向 |
+| dock Stack | Stack規則で中央整列し、子の任意offsetを絶対座標として扱わない |
+| 天気パネル内テキスト | レイヤー内の四辺paddingで移動する |
+| dockアイコン中心 | 実測120/237/360/483/603 KLWP単位 |
+
+## 8. 描画・プレビューの契約と近似
+
+### 8.1 描画パイプライン
+
+PillowのRGBAキャンバスへ、背景をcover-cropで描画し、モジュールツリーを後方から前方へ再帰合成します。各要素は値解決、配置、アニメーション変換、種別別描画、blendの順に処理します。
+
+- BLURREDは背景領域の切出し→GaussianBlur→paint colorを35%合成→形状マスクで貼付する
+- CLIP_NEXTは次要素を透明レイヤーへ描き、マスクを乗算して合成する
+- Komponentはスケールを適用した座標空間で子要素、選択境界、イベント領域を処理する
+- 透明なタップ判定Shapeも操作できるよう、イベント対象の再帰boundsを記録する
+
+### 8.2 対応範囲と意図的な制限
+
+| 領域 | 現在の扱い |
+| --- | --- |
+| Kode | sampleで使われる関数と主要な数学・文字列・色・正規表現を評価。公式全構文ではない |
+| 端末値 | 日時、天気、電池、音楽、位置などを編集可能な模擬値で評価 |
+| アニメーション | SCROLL、SWITCH、LOOP_2Wと移動、反転移動、FADE、ROTATE、SCALE、色フィルターを近似 |
+| 補間 | 直線、加速、減速、OVERSHOOT、BOUNCE |
+| 描画効果 | OUTERグロー、線形・放射・Sweepグラデーション、主要blend modeをPillowで近似 |
+| テキスト | FIXED_WIDTHの折返し位置は全角1em幅仮定。高さは実フォント計測 |
+| フォント | 破損・欠落時はシステムフォントへフォールバック |
+| 外部アクション | Intent、URI、音楽、アプリ起動設定は保存・表示するがPCから実行しない |
+| 未知設定 | 描画できなくても保持し、保存時に削除しない |
+
+PCプレビューはAndroid/Skiaと完全一致するエミュレーターではありません。「表示できない」と「保存できない」を区別し、最終互換性はKLWP実機で確認します。
+
+### 8.3 テキスト配置の不変条件
+
+テキストの計測と描画は必ず `_text_layout(item)` の同じ結果を使用します。以前の座標ずれは、インクbboxと描画原点、計測用と描画用フォント、複数行の行間、FIXED_WIDTH高さが別々に計算されていたことが原因でした。
+
+- 描画時と同じフォントインスタンス、行間、alignで計測する
+- bbox左上のベアリングを差し引き、インク左上を配置計算位置へ合わせる
+- `_TEXT_SPACING_U = 4.0` はdoc単位として計測・描画で共有する
+- FIXED_WIDTHでは枠幅を固定し、枠内でalignに従って配置する
+
+この経路を変更するときは、TOPLEFT/CENTER/BOTTOMRIGHT、和文・欧文、複数行、FIXED_WIDTHの組合せでインクbboxと期待位置を検証します。
+
+### 8.4 操作中と確定後の描画
+
+ホイールズーム中は直前の高品質画像を軽量拡縮し、入力停止140ms後に全体を高品質再描画します。ドラッグ中のスナップは候補ガイドだけを表示し、リリース時に1回だけ補正します。位置微調整のようにツリー構造が変わらない操作では、ツリーを再構築せずプレビューとプロパティだけを更新します。
+
+## 9. 回帰資料と検証方法
+
+### 9.1 正解データ
+
+| ファイル | 主な用途 |
+| --- | --- |
+| `sample/sizuka_home.klwp` | 27要素、bitmaps 6枚、fonts 4種、1080×2400向けの主要基準 |
+| `sample/genoblanc.klwp` | 46要素、BitmapModuleとKomponentModuleを含む |
+| `sample/S041.klwp` | 198要素、StackとShapeを多用する大規模例 |
+| `sample/official_v1_Analog.klwp` | 公式version 1互換 |
+| `sample/official_v3_CpuAndMem.klwp` | 公式version 3互換 |
+| `sample/official_v4_BunchOfText.klwp` | 公式version 4互換 |
+| `sample/official_v5_BlurClock.klwp` | 公式version 5互換 |
+
+公式sampleの出典とSHA-256は `sample/README.md` を正とします。sampleは実装へ合わせて書き換えません。
+
+### 9.2 自動検証
+
+```powershell
+python -m unittest -v
+python tools/check_object_calisthenics.py
+```
+
+現在の基準は機能99件と構造規約1件の計100テストです。少なくとも次を検証します。
+
+- ZIP/JSON/画像/フォントの往復保存と参照整合性
+- 公式v1/v3/v4/v5と実成果物v10/v11/v15の読込・保存後再読込
+- アンカー、ルートoffset、レイヤー内padding、Stack/Overlapの配置
+- Bitmap縦横比、全図形種別、グラデーション、blend、Komponent倍率
+- Global、Kode、背景切替、ページ、タップ、アニメーション
+- 選択、コピー、グループ化、直接操作、Undo/Redo、キーボード操作
+- UIを起動しない `render_to_image()` による全sample描画
+
+### 9.3 実機画像との差分
+
+```powershell
+python tools/compare_preview.py `
+  --reference sample/Screenshot_20260720-022511.png `
+  --preset sample/sizuka_home.klwp `
+  --timestamp 2026-07-20T02:25:00+09:00 `
+  --width 108 --ignore-top 5 --ignore-bottom 5 `
+  --max-mse 6500 --min-ssim 0.1 `
+  --output artifacts/pixel_diff/sizuka_home
+```
+
+比較結果はreference、actual、heatmap、metricsとして出力し、RGBのMSE・PSNRとグレースケールのグローバルSSIMを記録します。Androidのステータスバーなど比較対象外の余白は `--ignore-*` で除外します。生成物の `artifacts/` はGit管理対象外です。
+
+## 10. 開発・運用上の制約
+
+### 10.1 構造規約
+
+`test_architecture.py` と `tools/check_object_calisthenics.py` は `klwp/` と `tools/` に対して次を検査します。
+
+- `else` / `elif` を使わず、早期returnまたはディスパッチを使う
+- 制御構造のネストは1段、1メソッド30行以内、1クラス250行以内
+- 1クラスのインスタンス変数は2個以内
+- property/getter/setterデコレータを使わない
+- 二段以上のメッセージ連鎖を使わない
+- ドメイン標準または公式API以外の名前を省略しない
+
+プリミティブ値と文字列は値オブジェクトで意味を与え、複数対象はファーストクラスコレクションとして扱います。Tkinter、Pillow、JSON、ZIPなどが要求する生の値は外部境界で展開します。規約の意図は `モジュール設計の哲学.md` を参照します。
+
+### 10.2 ブランチとレビュー
+
+- 開発ブランチは `^BR_REVIEW_[A-Z0-9_]+$` に一致させる
+- 実装、回帰テスト、設計資料を同じPRで更新する
+- unrelatedな変更を同じコミットへ混ぜない
+- 正解データである `sample/` を実装都合で変更しない
+
+### 10.3 Androidへの受渡し
+
+保存済み `.klwp` は `/sdcard/Kustom/wallpapers/` へadb転送できます。手動の場合はAndroidの内部ストレージ `Kustom/wallpapers/` に配置し、KLWPの「読み込み」から開きます。KLWPでの保存・書出しにはPro版が必要ですが、読込と壁紙適用は別の操作です。
+
+### 10.4 現在の残課題
+
+1. 公式Kodeの未対応関数を実sampleから段階的に追加する
+2. Android 3.82以降の新しいShader表現を調査する
+3. adb転送後のKLWPリロードまで含むライブ反映方法を検討する
+4. Android側のアプリ／Activity選択支援を追加する
+5. 未知キー・未対応構文を破壊せず警告するバリデータを追加する
+6. レイヤー内offsetなど、sampleだけで確定できない挙動を実機で継続検証する
+
+完了済み機能を時系列に列挙する引継ぎログは維持しません。現行の対応範囲は本設計仕様、操作方法はREADME、判断原則は `モジュール設計の哲学.md` を正とします。
