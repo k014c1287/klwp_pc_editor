@@ -84,6 +84,8 @@ class EditorCommandCatalog:
             ("貼付", owner.cmd_paste, "Ctrl+V"),
             ("複製", owner.cmd_duplicate, ""),
             ("削除", owner.cmd_delete, "Delete"),
+            (None, None, ""),
+            ("コマンドパレット…", owner.cmd_command_palette, "Ctrl+K"),
         )
 
     def _add_items(self):
