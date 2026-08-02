@@ -30,6 +30,7 @@ from klwp.ui.menu_toolbar import EditorCommandCatalog
 from klwp.ui.window import EditorWindowBuilder
 from klwp.adb import AdbDevices, AdbTransfer
 from klwp.preview.pages import PresetPageCount, PreviewPageCounter
+from klwp.preview.values import PREVIEW_VALUE_FIELDS, default_preview_values
 from klwp.pixel_diff import (
     ComparableImages, ComparisonRegion, PixelDiff, PixelDiffThresholds,
     PresetPreview)
@@ -95,6 +96,17 @@ class FormulaTests(unittest.TestCase):
         self.assertEqual(ke.eval_formula("$wi(temp)$", values), -3.0)
         self.assertEqual(ke.eval_formula("$mi(title)$", values), "Edited Song")
         self.assertEqual(ke.eval_formula("$li(loc)$", values), "Sapporo")
+
+    def test_broadcast_value_is_blank_until_explicitly_entered(self):
+        values = {"__preview__": {"broadcast": {"gpt_ans": "回答"}}}
+
+        self.assertEqual(ke.eval_formula("$br(tasker, gpt_ans)$"), "")
+        self.assertEqual(
+            ke.eval_formula("$br(tasker, gpt_ans)$", values), "回答")
+        self.assertEqual(default_preview_values()["broadcast"]["gpt_ans"], "")
+        self.assertIn(
+            ("broadcast", "gpt_ans", "Broadcast / Tasker値"),
+            PREVIEW_VALUE_FIELDS)
 
     def test_kode_live_editor_reports_structural_errors(self):
         self.assertEqual(KodeSyntax.problem("$if(1, yes, no)$"), "")
