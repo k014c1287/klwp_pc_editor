@@ -41,11 +41,12 @@ from klwp.runtime import Resampling
 from klwp.preview.zoom import CachedPreviewImage, PreviewPan, PreviewZoom
 from klwp.recent import RecentFileStore
 from klwp.preview.timeline import PreviewTimeline
-from klwp.ui.tree import ModuleTreePresentation
+from klwp.ui.tree import ModuleTreePresentation, ModuleVisibility
 from klwp.ui.tree_drag import TreeDragMixin, TreeReorder
 from klwp.clipboard import ModuleClipboard
 from klwp.selection import ModuleSelection
 from klwp.ui.zoom import PreviewZoomMixin
+from klwp.ui.layer_actions import LayerActionsMixin
 from klwp.ui.welcome import TemplateCatalog
 from klwp.ui.time_preview import TimePreviewMixin
 
@@ -65,6 +66,12 @@ class _MultiEditor(
 
 
 class _TimeEditor(TimePreviewMixin):
+    def _set_status(self, text):
+        self.memory["last_status"] = text
+
+
+class _LayerEditor(
+        MultiSelectionMixin, LayerActionsMixin, DocumentMixin):
     def _set_status(self, text):
         self.memory["last_status"] = text
 
@@ -402,8 +409,94 @@ class ModuleTreeTests(unittest.TestCase):
 
         self.assertEqual(ModuleTreePresentation.title(hidden), "panel")
         self.assertEqual(ModuleTreePresentation.kind(hidden), "図形")
+        self.assertEqual(ModuleTreePresentation.visibility(hidden), "○")
         self.assertEqual(ModuleTreePresentation.priority(2, 3), "1・最前面")
         self.assertEqual(ModuleTreePresentation.tags(hidden), ("hidden",))
+
+    def test_visibility_column_click_toggles_one_item_and_records_history(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        item = ke.make_module("shape")
+        archive.modules().append(item)
+        tree = Mock()
+        tree.identify_column.return_value = "#1"
+        tree.identify_row.return_value = "item"
+        editor = _LayerEditor()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory["archive"] = archive
+        editor.memory["tree"] = tree
+        editor.memory["tree_map"] = {
+            "item": (item, archive.modules()),
+        }
+        editor._mark_dirty = Mock()
+        editor._refresh_all = Mock()
+        event = type("Event", (), {"x": 10, "y": 20})()
+
+        result = editor._on_tree_visibility_click(event)
+
+        self.assertEqual(result, "break")
+        self.assertFalse(item["config_visible"])
+        tree.selection_set.assert_called_once_with("item")
+        editor._mark_dirty.assert_called_once_with()
+        editor._refresh_all.assert_called_once_with(select=(item,))
+
+    def test_visibility_command_hides_mixed_multi_selection(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        first = ke.make_module("shape")
+        second = ke.make_module("text")
+        second["config_visible"] = False
+        archive.modules().extend((first, second))
+        tree = Mock()
+        tree.selection.return_value = ("first", "second")
+        tree.focus.return_value = "second"
+        editor = _LayerEditor()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory["archive"] = archive
+        editor.memory["tree"] = tree
+        editor.memory["tree_map"] = {
+            "first": (first, archive.modules()),
+            "second": (second, archive.modules()),
+        }
+        editor._mark_dirty = Mock()
+        editor._refresh_all = Mock()
+
+        editor.cmd_toggle_visibility()
+
+        self.assertFalse(ModuleVisibility(first).shown())
+        self.assertFalse(ModuleVisibility(second).shown())
+        editor._mark_dirty.assert_called_once_with()
+
+    def test_context_menu_contains_direct_layer_actions(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        item = ke.make_module("shape")
+        archive.modules().append(item)
+        tree = Mock()
+        tree.identify_row.return_value = "item"
+        tree.selection.return_value = ("item",)
+        tree.focus.return_value = "item"
+        editor = _LayerEditor()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory["archive"] = archive
+        editor.memory["tree"] = tree
+        editor.memory["tree_map"] = {
+            "item": (item, archive.modules()),
+        }
+        event = type(
+            "Event", (), {"y": 20, "x_root": 100, "y_root": 200})()
+        menu = Mock()
+
+        with patch("klwp.ui.layer_actions.tk.Menu", return_value=menu):
+            result = editor._on_tree_context_menu(event)
+
+        labels = tuple(
+            call.kwargs["label"] for call in menu.add_command.call_args_list)
+        self.assertEqual(result, "break")
+        self.assertEqual(labels, (
+            "非表示にする", "複製", "削除", "背面へ", "前面へ"))
+        menu.tk_popup.assert_called_once_with(100, 200)
+        menu.grab_release.assert_called_once_with()
 
     def test_clearing_layer_selection_restores_root_add_target(self):
         archive = ke.KlwpArchive()
