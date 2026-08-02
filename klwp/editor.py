@@ -21,11 +21,15 @@ from .ui.multi_selection import MultiSelectionMixin
 from .ui.grouping import GroupingMixin
 from .ui.zoom import PreviewZoomMixin
 from .ui.command_palette import CommandPaletteMixin
+from .ui.layer_actions import LayerActionsMixin
+from .ui.alignment import AlignmentMixin
+from .ui.time_preview import TimePreviewMixin
 
 
 if HAS_TK:
     class EditorApp(BootstrapMixin,
             MultiSelectionMixin,
+            LayerActionsMixin,
             GroupingMixin,
             DocumentMixin,
             PreviewModelMixin,
@@ -44,6 +48,8 @@ if HAS_TK:
             TreeDragMixin,
             PreviewZoomMixin,
             CommandPaletteMixin,
+            AlignmentMixin,
+            TimePreviewMixin,
             tk.Tk):
         CANVAS_W, CANVAS_H = 420, 760
         HISTORY_LIMIT = 50
