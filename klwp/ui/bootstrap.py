@@ -4,12 +4,14 @@ from ..shared import *  # noqa: F401,F403
 from ..preview.values import default_preview_values
 from ..recent import RecentFileStore
 from .welcome import WelcomeDialog
+from .theme import EditorTheme
 from .window import EditorWindowBuilder
 
 
 class BootstrapMixin:
     def __init__(self):
         super().__init__()
+        EditorTheme(self).apply()
         self.memory = ApplicationMemory()
         self.title(APP_TITLE)
         self.geometry("1280x820")
@@ -19,6 +21,7 @@ class BootstrapMixin:
         EditorWindowBuilder(self).build()
         self._reset_preview_state()
         self._reset_history()
+        self._start_preview_clock()
         self._refresh_all()
         self.after_idle(self._show_welcome)
 
@@ -59,6 +62,8 @@ class BootstrapMixin:
         memory['_zoom_render_after_id'] = None
         memory['_loop_started_at'] = None
         memory['_event_regions'] = []
+        memory['_time_after_id'] = None
+        memory['_updating_time_control'] = False
 
     def _initialize_history_memory(self):
         memory = self.memory
