@@ -1,9 +1,16 @@
 """Commands that operate on every module selected in the tree."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    APP_TITLE, messagebox, module_label,
+)
 from ..clipboard import ModuleClipboard
+from ..commands import (
+    AddModulesCommand, MoveModulesCommand, NudgeModulesCommand,
+    RemoveModulesCommand,
+)
 from ..positioning import KeyboardNudge, PositionMutation
 from ..selection import ModuleSelection
+from .command_execution import execute_editor_command
 
 
 class MultiSelectionMixin:
@@ -41,12 +48,9 @@ class MultiSelectionMixin:
         clones = package.paste_into(archive)
         self._prepare_pasted_items(clones, target)
         insertion_index = self._paste_index(target)
-        for offset, clone in enumerate(clones):
-            target.insert(insertion_index + offset, clone)
-        self._select_modules(clones)
-        self._mark_dirty()
-        self._refresh_all(select=tuple(clones))
-        self._set_status(f"{len(clones)}件の要素を貼り付けました")
+        status = f"{len(clones)}件の要素を貼り付けました"
+        command = AddModulesCommand(target, clones, insertion_index, status)
+        execute_editor_command(self, command)
 
     def _prepare_pasted_items(self, items, target):
         archive = self.memory["archive"]
@@ -86,12 +90,9 @@ class MultiSelectionMixin:
     def _nudge_selection(self, selection, nudge):
         archive = self.memory["archive"]
         root_items = archive.modules()
-        for item, parent in selection.ordered_targets():
-            mutation = PositionMutation(item, parent is root_items)
-            nudge.apply_to(mutation)
-        self._mark_dirty()
-        self._render()
-        self._build_props()
+        targets = selection.ordered_targets()
+        command = NudgeModulesCommand(targets, root_items, nudge)
+        execute_editor_command(self, command)
 
     def cmd_duplicate(self):
         selection = self._module_selection()
@@ -106,12 +107,10 @@ class MultiSelectionMixin:
         parent = selection.parent()
         self._prepare_pasted_items(clones, parent)
         insertion_index = parent.index(selection.ordered_targets()[-1][0]) + 1
-        for offset, clone in enumerate(clones):
+        for clone in clones:
             self._name_duplicate(clone)
-            parent.insert(insertion_index + offset, clone)
-        self._select_modules(clones)
-        self._mark_dirty()
-        self._refresh_all(select=tuple(clones))
+        command = AddModulesCommand(parent, clones, insertion_index)
+        execute_editor_command(self, command)
 
     @staticmethod
     def _name_duplicate(item):
@@ -142,11 +141,10 @@ class MultiSelectionMixin:
 
     def _delete_selection(self, selection):
         count = selection.count()
-        selection.remove_all()
-        self._select_modules(())
-        self._mark_dirty()
-        self._refresh_all()
-        self._set_status(f"{count}件の要素を削除しました")
+        targets = selection.ordered_targets()
+        status = f"{count}件の要素を削除しました"
+        command = RemoveModulesCommand(targets, status)
+        execute_editor_command(self, command)
 
     def cmd_move(self, difference):
         selection = self._module_selection()
@@ -155,22 +153,5 @@ class MultiSelectionMixin:
             return
         parent = selection.parent()
         items = [target[0] for target in selection.ordered_targets()]
-        insertion_index = self._moved_block_index(parent, items, difference)
-        if insertion_index is None:
-            return
-        for item in items:
-            parent.remove(item)
-        for offset, item in enumerate(items):
-            parent.insert(insertion_index + offset, item)
-        self._select_modules(items)
-        self._mark_dirty()
-        self._refresh_all(select=tuple(items))
-
-    @staticmethod
-    def _moved_block_index(parent, items, difference):
-        indexes = [parent.index(item) for item in items]
-        if difference < 0 and min(indexes) == 0:
-            return None
-        if difference > 0 and max(indexes) == len(parent) - 1:
-            return None
-        return min(indexes) + difference
+        command = MoveModulesCommand(parent, items, difference)
+        execute_editor_command(self, command)

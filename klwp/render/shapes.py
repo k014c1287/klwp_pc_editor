@@ -1,6 +1,10 @@
 """Render KLWP shape geometry, masks, paths and shadows."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    Image, ImageChops, ImageDraw, ImageFilter,
+    Resampling, _as_number, _svg_subpaths, decode_kustom_icon,
+    math, svg_path_mask,
+)
 from .gradient import GradientRendererMixin
 
 

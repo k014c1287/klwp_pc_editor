@@ -1,10 +1,17 @@
 """Document lifecycle, history commands and module-list operations."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    APP_TITLE, ArchiveSnapshot, basename, copy,
+    filedialog, make_module, messagebox, module_label,
+)
+from ..commands import (
+    AddModulesCommand, MoveModulesCommand, RemoveModulesCommand,
+)
 from ..positioning import PositionMutation
 from ..selection import ModuleSelection, SelectedItemCollection
 from .asset_dialogs import BackgroundDialog, ImageManagerDialog
 from .shape_dialog import ShapeDialog
+from .command_execution import execute_editor_command
 from .tree import ModuleTreeBuilder
 
 
@@ -224,10 +231,8 @@ class DocumentMixin(DocumentLifecycleMixin):
         item = make_module(kind)
         target = self._target_list()
         self._prepare_item_position(item, target)
-        target.append(item)
-        self.memory['selected'] = item
-        self._mark_dirty()
-        self._refresh_all(select=item)
+        command = AddModulesCommand(target, (item,))
+        execute_editor_command(self, command)
 
     def _prepare_item_position(self, item, target):
         archive = self.memory['archive']
@@ -249,10 +254,8 @@ class DocumentMixin(DocumentLifecycleMixin):
         archive = self.memory['archive']
         mutation = PositionMutation(clone, parent is archive.modules())
         mutation.move_by(30.0, 30.0)
-        parent.insert(parent.index(item) + 1, clone)
-        self.memory['selected'] = clone
-        self._mark_dirty()
-        self._refresh_all(select=clone)
+        command = AddModulesCommand(parent, (clone,), parent.index(item) + 1)
+        execute_editor_command(self, command)
 
     def cmd_delete(self):
         target = self._deletion_target()
@@ -276,24 +279,16 @@ class DocumentMixin(DocumentLifecycleMixin):
         return messagebox.askyesno(APP_TITLE, question)
 
     def _delete_target(self, target):
-        item, parent = target
-        parent.remove(item)
-        self.memory['selected'] = None
-        self._mark_dirty()
-        self._refresh_all()
+        command = RemoveModulesCommand((target,))
+        execute_editor_command(self, command)
 
     def cmd_move(self, difference):
         identifier = self._selected_iid()
         if not identifier:
             return
         item, parent = self.memory['tree_map'][identifier]
-        current_index = parent.index(item)
-        target_index = current_index + difference
-        if 0 <= target_index < len(parent):
-            parent[current_index], parent[target_index] = \
-                parent[target_index], parent[current_index]
-            self._mark_dirty()
-            self._refresh_all(select=item)
+        command = MoveModulesCommand(parent, (item,), difference)
+        execute_editor_command(self, command)
 
     def cmd_background(self):
         BackgroundDialog(self).show()

@@ -1,6 +1,8 @@
 """Build the main menu and the compact primary toolbar."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    tk, ttk,
+)
 from .theme import Tooltip
 
 
@@ -46,6 +48,7 @@ class EditorCommandCatalog:
 
     def toolbar_items(self):
         owner = self._owner
+        services = owner.services
         return (
             ("button", "新規", owner.cmd_new),
             ("button", "開く", owner.cmd_open),
@@ -61,11 +64,12 @@ class EditorCommandCatalog:
             ("button", "複製", owner.cmd_duplicate),
             ("button", "削除", owner.cmd_delete),
             ("separator", "", None),
-            ("button", "Androidへ転送", owner.cmd_adb_transfer),
+            ("button", "Androidへ転送", services.cmd_adb_transfer),
         )
 
     def _file_items(self):
         owner = self._owner
+        services = owner.services
         return (
             ("新規", owner.cmd_new, ""),
             ("開く", owner.cmd_open, ""),
@@ -73,11 +77,12 @@ class EditorCommandCatalog:
             ("保存", owner.cmd_save, ""),
             ("名前を付けて保存", owner.cmd_save_as, ""),
             (None, None, ""),
-            ("PNGを書き出す…", owner.cmd_export_png, ""),
+            ("PNGを書き出す…", services.cmd_export_png, ""),
         )
 
     def _edit_items(self):
         owner = self._owner
+        services = owner.services
         return (
             ("元に戻す", owner.cmd_undo, "Ctrl+Z"),
             ("やり直す", owner.cmd_redo, "Ctrl+Y"),
@@ -87,7 +92,7 @@ class EditorCommandCatalog:
             ("複製", owner.cmd_duplicate, ""),
             ("削除", owner.cmd_delete, "Delete"),
             (None, None, ""),
-            ("コマンドパレット…", owner.cmd_command_palette, "Ctrl+K"),
+            ("コマンドパレット…", services.cmd_command_palette, "Ctrl+K"),
         )
 
     def _add_items(self):
@@ -102,19 +107,20 @@ class EditorCommandCatalog:
 
     def _arrange_items(self):
         owner = self._owner
+        services = owner.services
         return (
             ("グループ化", owner.cmd_group_selection, ""),
             ("グループ解除", owner.cmd_ungroup_selection, ""),
             (None, None, ""),
-            ("左揃え", owner.cmd_align_left, ""),
-            ("水平方向中央揃え", owner.cmd_align_center_horizontal, ""),
-            ("右揃え", owner.cmd_align_right, ""),
-            ("上揃え", owner.cmd_align_top, ""),
-            ("垂直方向中央揃え", owner.cmd_align_center_vertical, ""),
-            ("下揃え", owner.cmd_align_bottom, ""),
+            ("左揃え", services.cmd_align_left, ""),
+            ("水平方向中央揃え", services.cmd_align_center_horizontal, ""),
+            ("右揃え", services.cmd_align_right, ""),
+            ("上揃え", services.cmd_align_top, ""),
+            ("垂直方向中央揃え", services.cmd_align_center_vertical, ""),
+            ("下揃え", services.cmd_align_bottom, ""),
             (None, None, ""),
-            ("水平方向に均等配置", owner.cmd_distribute_horizontal, ""),
-            ("垂直方向に均等配置", owner.cmd_distribute_vertical, ""),
+            ("水平方向に均等配置", services.cmd_distribute_horizontal, ""),
+            ("垂直方向に均等配置", services.cmd_distribute_vertical, ""),
             (None, None, ""),
             ("背面へ", lambda: owner.cmd_move(-1), ""),
             ("前面へ", lambda: owner.cmd_move(1), ""),
@@ -133,7 +139,8 @@ class EditorCommandCatalog:
 
     def _device_items(self):
         owner = self._owner
-        return (("Androidへ転送", owner.cmd_adb_transfer, ""),)
+        services = owner.services
+        return (("Androidへ転送", services.cmd_adb_transfer, ""),)
 
 
 class EditorMenuBuilder:

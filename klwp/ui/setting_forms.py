@@ -1,6 +1,9 @@
 """Modal forms for one animation or one tap event."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    APP_TITLE, copy, messagebox, tk,
+    ttk,
+)
 from .setting_values import TouchActionValues, first_or_empty
 
 

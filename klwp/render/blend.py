@@ -1,6 +1,8 @@
 """Apply KLWP paint filters while compositing a rendered leaf."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    Image, ImageChops,
+)
 
 
 class BlendRendererMixin:

@@ -2,7 +2,9 @@
 
 from datetime import datetime
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    APP_TITLE, messagebox, tk, ttk,
+)
 from ..preview.values import (
     PREVIEW_VALUE_FIELDS, converted_preview_value, default_preview_values,
 )

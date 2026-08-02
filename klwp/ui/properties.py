@@ -1,6 +1,5 @@
 """Property editing and dirty-history integration."""
 
-from ..shared import *  # noqa: F401,F403
 from .property_panel import AnchorChoices, JsonEditorDialog, PropertyPanelBuilder
 
 

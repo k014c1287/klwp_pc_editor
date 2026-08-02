@@ -1,6 +1,8 @@
 """Editor command for an explicit one-click ADB transfer."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    APP_TITLE, messagebox,
+)
 from ..adb import AdbLocator, AdbTransfer, AdbTransferError
 
 

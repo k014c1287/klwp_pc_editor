@@ -1,6 +1,9 @@
 """Dialog used to create one of the supported KLWP shape modules."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    APP_TITLE, ApplicationMemory, SHAPE_TYPE_OPTIONS, SHAPE_TYPE_SPECS,
+    make_shape_module, messagebox, tk, ttk,
+)
 from .color_control import ColorControl
 
 

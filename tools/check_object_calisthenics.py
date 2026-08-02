@@ -32,6 +32,7 @@ class ModuleInspector:
 
     def violations(self):
         checks = (
+            self._star_import_violations,
             self._else_violations,
             self._method_size_violations,
             self._class_size_violations,
@@ -44,6 +45,19 @@ class ModuleInspector:
         for check in checks:
             result.extend(check())
         return result
+
+    def _star_import_violations(self):
+        path = self._path
+        if path.name == "shared.py":
+            return []
+        imports = filter(
+            lambda node: isinstance(node, ast.ImportFrom),
+            ast.walk(self._tree))
+        return [
+            self._violation(node, "wildcard import is not allowed")
+            for node in imports
+            if any(alias.name == "*" for alias in node.names)
+        ]
 
     def _else_violations(self):
         nodes = filter(self._has_else_clause, ast.walk(self._tree))

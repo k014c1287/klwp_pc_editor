@@ -1,6 +1,11 @@
 """Background and bitmap-management dialogs."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    APP_TITLE, ApplicationMemory, HAS_PIL, Image,
+    ImageTk, KFILE_PREFIX, colorchooser, filedialog,
+    io, messagebox, re, simpledialog,
+    tk, ttk,
+)
 from ..background import BackgroundImageBinding, BitmapGlobalCollection
 
 

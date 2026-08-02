@@ -1,6 +1,10 @@
 """Direct visibility and context-menu actions for the module tree."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    tk,
+)
+from ..commands import SetVisibilityCommand
+from .command_execution import execute_editor_command
 from .tree import ModuleVisibility
 
 
@@ -29,13 +33,8 @@ class LayerActionsMixin:
 
     def _toggle_visibility(self, items):
         target = ModuleVisibility.toggled_value(items)
-        for item in items:
-            item["config_visible"] = target
-        self._select_modules(items)
-        self._mark_dirty()
-        self._refresh_all(select=tuple(items))
-        state = "表示" if target else "非表示"
-        self._set_status(f"{len(items)}件を{state}にしました")
+        command = SetVisibilityCommand(items, target)
+        execute_editor_command(self, command)
 
     def _on_tree_context_menu(self, event):
         tree = self.memory["tree"]

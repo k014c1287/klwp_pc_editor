@@ -1,6 +1,8 @@
 """Construct the Tk widgets owned by the main editor window."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    tk, ttk,
+)
 from .menu_toolbar import EditorMenuBuilder, PrimaryToolbarBuilder
 from .theme import EditorPalette
 
@@ -23,10 +25,11 @@ class EditorWindowBuilder:
 
     def _keyboard_shortcuts(self):
         owner = self._owner
+        services = owner.services
         owner.bind_all("<Control-z>", owner._on_undo_shortcut)
         owner.bind_all("<Control-y>", owner._on_redo_shortcut)
         owner.bind_all("<Control-Shift-Z>", owner._on_redo_shortcut)
-        owner.bind_all("<Control-k>", owner._on_command_palette_shortcut)
+        owner.bind_all("<Control-k>", services.on_command_palette_shortcut)
         owner.bind("<Escape>", owner._on_clear_selection_shortcut)
         self._application_nudge_shortcuts()
 
@@ -38,6 +41,7 @@ class EditorWindowBuilder:
 
     def _module_tree(self, body):
         owner = self._owner
+        services = owner.services
         frame = ttk.Frame(body)
         self._module_tree_header(frame)
         tree = ttk.Treeview(
@@ -46,11 +50,11 @@ class EditorWindowBuilder:
         self._configure_module_tree(tree)
         tree.pack(fill="both", expand=True)
         tree.bind("<<TreeviewSelect>>", owner._on_tree_select)
-        tree.bind("<ButtonPress-1>", owner._on_tree_visibility_click)
+        tree.bind("<ButtonPress-1>", services.on_tree_visibility_click)
         tree.bind("<ButtonPress-1>", owner._on_tree_press, add="+")
         tree.bind("<B1-Motion>", owner._on_tree_drag, add="+")
         tree.bind("<ButtonRelease-1>", owner._on_tree_release, add="+")
-        tree.bind("<Button-3>", owner._on_tree_context_menu)
+        tree.bind("<Button-3>", services.on_tree_context_menu)
         tree.bind("<Delete>", owner._on_delete_shortcut)
         tree.bind("<Control-c>", owner._on_copy_shortcut)
         tree.bind("<Control-v>", owner._on_paste_shortcut)
@@ -145,18 +149,19 @@ class EditorWindowBuilder:
 
     def _time_controls(self, frame):
         owner = self._owner
+        services = owner.services
         controls = ttk.Frame(frame)
         controls.pack(fill="x", padx=8, pady=(4, 0))
         live = tk.BooleanVar(value=True)
         owner.memory["preview_time_live_var"] = live
         ttk.Checkbutton(
             controls, text="現在時刻", variable=live,
-            command=owner._on_live_time_changed).pack(side="left")
+            command=services.on_live_time_changed).pack(side="left")
         variable = tk.DoubleVar(value=0.0)
         owner.memory["preview_time_var"] = variable
         scale = ttk.Scale(
             controls, from_=0.0, to=24.0, variable=variable,
-            command=owner._on_preview_time_changed, length=210)
+            command=services.on_preview_time_changed, length=210)
         scale.pack(side="left", fill="x", expand=True, padx=(6, 4))
         label = ttk.Label(controls, text="00:00:00", width=8, anchor="e")
         label.pack(side="left")

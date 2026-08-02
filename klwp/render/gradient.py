@@ -1,6 +1,8 @@
 """Create KLWP-compatible two-colour gradient textures."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    Image, math,
+)
 
 
 class GradientRendererMixin:

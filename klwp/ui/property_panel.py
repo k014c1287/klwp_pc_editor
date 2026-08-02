@@ -1,6 +1,9 @@
 """Build the selected module's property controls."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    APP_TITLE, DEFAULT_ANCHOR, filedialog, json,
+    messagebox, module_label, tk, ttk,
+)
 from .color_control import ColorControl
 from .icon_picker import IconPickerDialog
 from .kode_dialog import KodeEditorDialog

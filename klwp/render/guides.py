@@ -1,6 +1,5 @@
 """Draw ruler ticks and transient alignment guides over the preview."""
 
-from ..shared import *  # noqa: F401,F403
 
 
 class CanvasGuideMixin:

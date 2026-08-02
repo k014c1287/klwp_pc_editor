@@ -2,7 +2,9 @@
 
 from pathlib import Path
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    __file__, tk, ttk,
+)
 
 
 class TemplateCatalog:

@@ -2,7 +2,9 @@
 
 from itertools import chain
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    tk, ttk,
+)
 from .menu_toolbar import EditorCommandCatalog
 
 
@@ -132,9 +134,11 @@ class CommandPaletteDialog:
 
 class CommandPaletteMixin:
     def cmd_command_palette(self):
-        groups = EditorCommandCatalog(self).menu_groups()
+        attributes = vars(self)
+        owner = attributes.get("_owner", self)
+        groups = EditorCommandCatalog(owner).menu_groups()
         entries = CommandPaletteEntries(groups)
-        CommandPaletteDialog(self, entries).show()
+        CommandPaletteDialog(owner, entries).show()
 
     def _on_command_palette_shortcut(self, _event=None):
         self.cmd_command_palette()

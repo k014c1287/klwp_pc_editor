@@ -1,6 +1,9 @@
 """Searchable grid picker for self-contained KLWP FontIcon values."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    HAS_PIL, Image, ImageChops, ImageTk,
+    decode_kustom_icon, svg_path_mask, tk, ttk,
+)
 from ..icons import IconCatalog
 
 

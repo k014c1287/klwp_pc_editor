@@ -1,6 +1,8 @@
 """Compose individual KLWP modules and their child layers."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    Image, ImageChops, ImageDraw, Resampling,
+)
 from .blend import BlendRendererMixin
 from .animation_effects import AnimationEffectMixin
 from .context import ItemPlacement, PaintRequest, StackCursor

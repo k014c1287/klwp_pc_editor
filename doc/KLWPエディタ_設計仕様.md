@@ -2,20 +2,22 @@
 
 この文書は、現在の `klwp_editor.py` と `klwp/` パッケージを基準にした設計資料です。図はすべて Mermaid 形式で記述しています。
 
-- 対象実装: 2026-08-02 時点
+- 対象実装: 2026-08-03 時点
 - 実行入口: `klwp_editor.py`
 - 合成ルート: `klwp/editor.py` の `EditorApp`
 - 永続化対象: ZIP 形式の `.klwp` ファイル
-- 一時状態: `ApplicationMemory` に集約された、保存されない編集・プレビュー状態
+- 一時状態: `ApplicationMemory` 配下の責務別partitionに分離された編集・プレビュー状態
 
 ## 1. 設計の全体像
 
-`EditorApp` は、責務別の Mixin を組み合わせる合成ルートです。各 Mixin は状態を直接保持せず、`ApplicationMemory` を介して共同作業します。KLWP ファイルそのものは `KlwpArchive` が管理し、描画は Pillow 上で合成した後に Tk Canvas へ表示します。
+`EditorApp` は、相互協調の強い描画・編集Mixinと `EditorServices` を組み合わせる合成ルートです。PNG書き出し、コマンドパレット、整列、表示操作、ADB転送、時刻プレビューは継承せず構成サービスとして束ねます。一時状態は `ApplicationMemory` の責務別partition、確定編集は `EditCommandExecutor` を境界として扱います。KLWPファイルそのものは `KlwpArchive` が管理し、描画はPillow上で合成した後にTk Canvasへ表示します。
 
 | 領域 | 主な責務 | 主な実装場所 |
 | --- | --- | --- |
 | エントリーポイント | 実行条件の確認と GUI 起動 | `klwp_editor.py` |
 | アプリケーション合成 | Mixin と `tk.Tk` の統合 | `klwp/editor.py` |
+| 構成サービス | 独立UI機能、編集Commandの実行 | `klwp/ui/services.py`, `klwp/ui/features.py`, `klwp/ui/command_execution.py` |
+| 編集Command | UI非依存の文書変更と結果 | `klwp/commands.py` |
 | ドキュメント | 新規、読込、保存、履歴、モジュール操作 | `klwp/ui/document.py` |
 | UI | ウィンドウ、ツリー、プロパティ、設定ダイアログ | `klwp/ui/` |
 | 描画 | Canvas、配置、合成、図形、文字、画像 | `klwp/render/` |
@@ -30,7 +32,7 @@
 
 ### 2.1 EditorApp の合成
 
-`EditorApp` 自身は起動定数とプロパティ定義だけを持ち、処理は Mixin に分散されています。`BootstrapMixin` が唯一のアプリケーション状態 `memory` を生成します。
+`EditorApp` 自身は起動定数とプロパティ定義だけを持ち、協調処理は18個のMixin、独立機能は`EditorServices`へ分散します。以前直接継承していた整列、表示操作、PNG、コマンドパレット、ADB、時刻プレビューの6機能はowner束縛Controllerとして構成します。`BootstrapMixin`は`memory`と`services`の2つだけを生成します。
 
 ```mermaid
 classDiagram
@@ -42,6 +44,25 @@ classDiagram
         +CANVAS_H
         +HISTORY_LIMIT
         +PROP_FIELDS
+    }
+    class EditorServices {
+        +execute(command)
+        +cmd_export_png()
+        +cmd_command_palette()
+        +cmd_align_left()
+    }
+    class EditorFeatures {
+        -_values
+    }
+    class EditCommandExecutor {
+        +execute(command)
+    }
+    class EditOutcome {
+        -_values
+    }
+    class MemoryPartitions {
+        +partition(name)
+        +initialize(domain, values)
     }
     class BootstrapMixin {
         +__init__()
@@ -131,7 +152,6 @@ classDiagram
     class SettingsMixin
     class PropertyPanelMixin
     class PreviewValuesMixin
-    class AdbTransferMixin
     class TreeDragMixin {
         -_on_tree_press(event)
         -_on_tree_drag(event)
@@ -172,7 +192,7 @@ classDiagram
         +moved_origin(pointer)
     }
     class ApplicationMemory {
-        -_values
+        -_partitions
         +optional(name, default)
         +contains(name)
     }
@@ -211,7 +231,6 @@ classDiagram
     SettingsMixin <|-- EditorApp
     PropertyPanelMixin <|-- EditorApp
     PreviewValuesMixin <|-- EditorApp
-    AdbTransferMixin <|-- EditorApp
     TreeDragMixin <|-- EditorApp
     MultiSelectionMixin <|-- EditorApp
     GroupingMixin <|-- EditorApp
@@ -232,7 +251,8 @@ classDiagram
     ResizeInteractionMixin ..> PositionMutation : preserve opposite edge
     MultiSelectionMixin ..> KeyboardNudge : arrow key event
     KeyboardNudge ..> PositionMutation : visual movement
-    MultiSelectionMixin ..> PositionMutation : paste and keyboard nudge
+    MultiSelectionMixin ..> EditCommandExecutor : confirmed edits
+    EditCommandExecutor ..> EditOutcome
     CanvasRendererMixin ..> ResizeHandleSet : selection handles
     CanvasRendererMixin ..> PreviewZoom : render scale
     PreviewZoomMixin ..> PreviewZoom : edit view
@@ -242,6 +262,10 @@ classDiagram
     PreviewPanMixin ..> ZoomPreviewRendererMixin : cached crop
 
     EditorApp *-- ApplicationMemory : memory
+    ApplicationMemory *-- MemoryPartitions : responsibility state
+    EditorApp *-- EditorServices : services
+    EditorServices *-- EditorFeatures : independent features
+    EditorServices *-- EditCommandExecutor : edit boundary
     BootstrapMixin ..> EditorWindowBuilder : builds
     EditorWindowBuilder ..> EditorMenuBuilder : menu
     EditorWindowBuilder ..> PrimaryToolbarBuilder : frequent actions
@@ -260,7 +284,7 @@ classDiagram
     direction LR
 
     class ApplicationMemory {
-        -_values
+        -_partitions
     }
     class KlwpArchive {
         +contents
@@ -798,6 +822,8 @@ sequenceDiagram
     participant Main as klwp_editor.main
     participant Editor as EditorApp
     participant Memory as ApplicationMemory
+    participant Partitions as MemoryPartitions
+    participant Services as EditorServices
     participant Archive as KlwpArchive
     participant Factory as PresetFactory
     participant Window as EditorWindowBuilder
@@ -807,11 +833,13 @@ sequenceDiagram
     User->>Main: アプリケーションを実行
     Main->>Editor: EditorApp()
     Editor->>Memory: ApplicationMemory()
+    Memory->>Partitions: 責務別partitionを生成
+    Editor->>Services: EditorServices(EditorApp)
     Editor->>Archive: KlwpArchive()
     Editor->>Archive: new()
     Archive->>Factory: create(1080, 2400, untitled)
     Factory-->>Archive: preset辞書
-    Editor->>Memory: archive・キャッシュ・プレビュー状態を格納
+    Editor->>Memory: initialize_document / selection / preview / viewport
     Editor->>History: HistoryTimeline(HISTORY_LIMIT)
     Editor->>Window: build()
     Window-->>Editor: Tkウィジェットをmemoryへ登録
@@ -1099,7 +1127,7 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     actor User as 利用者
-    participant Editor as AdbTransferMixin
+    participant Editor as EditorServices / AdbTransferController
     participant Document as DocumentMixin
     participant Locator as AdbLocator
     participant Transfer as AdbTransfer
@@ -1355,6 +1383,8 @@ sequenceDiagram
     participant Tree as Treeview
     participant Selection as ModuleSelection
     participant Commands as MultiSelectionMixin
+    participant Executor as EditCommandExecutor
+    participant Edit as AddModulesCommand
     participant Clipboard as ModuleClipboard
     participant Source as コピー元KlwpArchive
     participant Target as 貼付先KlwpArchive
@@ -1374,8 +1404,10 @@ sequenceDiagram
         Clipboard->>Clipboard: kfile参照を置換
     end
     Clipboard-->>Commands: 独立したモジュール複製
-    Commands->>Target: 選択位置の後へinsert
-    Commands->>History: record(snapshot)
+    Commands->>Edit: AddModulesCommand(parent, clones, index)
+    Commands->>Executor: execute(Edit)
+    Executor->>Target: 選択位置の後へinsert
+    Executor->>History: record(snapshot)
 ```
 
 ### 3.15 複数要素のグループ化／解除
@@ -1387,6 +1419,9 @@ sequenceDiagram
     autonumber
     actor User as 利用者
     participant Commands as GroupingMixin
+    participant Executor as EditCommandExecutor
+    participant Edit as GroupModulesCommand
+    participant Ungroup as UngroupModulesCommand
     participant Selection as ModuleSelection
     participant Geometry as GroupGeometry
     participant Position as GroupPosition
@@ -1399,14 +1434,18 @@ sequenceDiagram
     Geometry-->>Commands: 画面境界と外接矩形
     Commands->>Position: 子をunion基準の四辺余白へ変換
     Commands->>Position: 新規OverlapLayerを親基準へ配置
-    Commands->>Items: 選択要素をレイヤーへ置換
-    Commands->>History: record(snapshot)
+    Commands->>Edit: GroupModulesCommand(parent, items, group, index)
+    Commands->>Executor: execute(Edit)
+    Executor->>Items: 選択要素をレイヤーへ置換
+    Executor->>History: record(snapshot)
     opt 解除
         User->>Commands: グループ解除
         Commands->>Geometry: 子の現在境界
         Commands->>Position: 親コンテキストの座標へ逆変換
-        Commands->>Items: レイヤーを子要素へ置換
-        Commands->>History: record(snapshot)
+        Commands->>Ungroup: UngroupModulesCommand(parent, group, children, index)
+        Commands->>Executor: execute(Ungroup)
+        Executor->>Items: レイヤーを子要素へ置換
+        Executor->>History: record(snapshot)
     end
 ```
 
@@ -1536,6 +1575,8 @@ sequenceDiagram
     actor User
     participant Tree as Treeview
     participant Commands as MultiSelectionMixin
+    participant Executor as EditCommandExecutor
+    participant Edit as NudgeModulesCommand
     participant Selection as ModuleSelection
     participant Nudge as KeyboardNudge
     participant Position as PositionMutation
@@ -1546,29 +1587,32 @@ sequenceDiagram
     Tree->>Commands: _on_nudge_shortcut(event)
     Commands->>Selection: from_memory(memory)
     Commands->>Nudge: from_event(event)
+    Commands->>Edit: NudgeModulesCommand(targets, root, nudge)
+    Commands->>Executor: execute(Edit)
     loop 選択された全要素
-        Commands->>Position: PositionMutation(item, is_root)
+        Edit->>Position: PositionMutation(item, is_root)
         Nudge->>Position: apply_to(mutation)
     end
-    Commands->>History: record(snapshot)
-    Commands->>Preview: _render()
-    Commands->>Commands: _build_props()
+    Executor->>History: record(snapshot)
+    Executor->>Preview: _render()
+    Executor->>Commands: _build_props()
 ```
 
 ## 4. 状態とデータの境界
 
 ### 4.1 `ApplicationMemory` の主な内容
 
+`ApplicationMemory` は従来の `memory["key"]` 互換を維持しながら、キーを `MemoryPartitions` が次の責務へ振り分けます。未登録キーは拡張partitionへ隔離されるため、新機能の一時状態が既存責務を直接汚染しません。
+
 | 分類 | キーの例 | 保存対象 |
 | --- | --- | --- |
-| ドキュメント | `archive`, `device_res` | `archive` の内容だけ `.klwp` に保存 |
+| ドキュメント | `archive`, `device_res`, `preview_values`, `recent_files`, `module_clipboard` | `archive` の内容だけ `.klwp` に保存 |
+| 選択 | `selected`, `selected_items`, `tree_map`, `drag_state`, `resize_state`, `tree_drag` | 保存しない |
+| プレビュー | `preview_ts`, `preview_scroll`, Switch補間、アニメーション、イベント領域 | 保存しない |
+| 表示領域 | `preview_zoom`, `_view_origin`, `_view_pan_state`, `_quality_preview`, `snap_enabled` | 保存しない |
 | 履歴 | `history`, `dirty` | 保存しない |
 | UI | `menu_bar`, `primary_toolbar`, `tree`, `canvas`, `status`, 各ボタン | 保存しない |
-| キャッシュ | `photo_cache`, `font_cache`, `_photo`, `_quality_preview`, `_item_bounds` | 保存しない |
-| 編集操作 | `selected`, `selected_items`, `drag_state`, `resize_state`, `_view_pan_state`, `tree_drag`, `module_clipboard` | 保存しない |
-| プレビュー | `preview_scroll`, `preview_switches`, `preview_switch_progress`, `preview_values`, `preview_ts`, `preview_zoom`, `_view_origin`, `snap_guides`, `snap_correction` | 保存しない |
-| アニメーション | `_switch_transitions`, `_scroll_transition`, `_loop_started_at` | 保存しない |
-| イベント | `_event_regions`, `interaction_drag` | 保存しない |
+| 拡張 | 既存partitionへ未登録の一時キー | 保存しない |
 
 ### 4.2 KLWP値の解決優先順位
 
@@ -1594,7 +1638,7 @@ sequenceDiagram
 
 ## 5. 保守時の更新指針
 
-- `EditorApp` の継承 Mixin を追加・削除した場合は「2.1 EditorApp の合成」を更新する。
+- `EditorApp` のMixinまたは `EditorServices` の構成機能を追加・削除した場合は「2.1 EditorApp の合成」を更新する。
 - KLWP ZIP の格納項目を変更した場合は「2.2」と「3.4」を更新する。
 - 描画順、値解決順、子要素の合成方法を変更した場合は「2.3」と「3.2」を更新する。
 - 新しいアニメーション反応・アクションを追加した場合は「2.4」「3.5」「3.6」を更新する。
@@ -1790,7 +1834,7 @@ python -m unittest -v
 python tools/check_object_calisthenics.py
 ```
 
-現在の基準は機能99件と構造規約1件の計100テストです。少なくとも次を検証します。
+現在の基準は構造回帰を含む計125テストです。少なくとも次を検証します。
 
 - ZIP/JSON/画像/フォントの往復保存と参照整合性
 - 公式v1/v3/v4/v5と実成果物v10/v11/v15の読込・保存後再読込

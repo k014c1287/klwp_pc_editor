@@ -1,6 +1,8 @@
 """Apply the editor's dark visual theme and lightweight tooltips."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    tk, ttk,
+)
 
 
 class EditorPalette:
