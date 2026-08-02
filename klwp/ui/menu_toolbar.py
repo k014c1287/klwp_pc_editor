@@ -1,6 +1,33 @@
 """Build the main menu and the compact primary toolbar."""
 
 from ..shared import *  # noqa: F401,F403
+from .theme import Tooltip
+
+
+class ToolbarPresentation:
+    ITEMS = {
+        "新規": ("＋", "新しいプリセットを作成"),
+        "開く": ("↗", "KLWPファイルを開く"),
+        "保存": ("▣", "現在のプリセットを保存"),
+        "元に戻す": ("↶", "直前の操作を元に戻す (Ctrl+Z)"),
+        "やり直す": ("↷", "元に戻した操作をやり直す (Ctrl+Y)"),
+        "＋追加": ("＋", "テキスト・図形・画像などを追加"),
+        "コピー": ("□", "選択した要素をコピー (Ctrl+C)"),
+        "貼付": ("▤", "コピーした要素を貼り付け (Ctrl+V)"),
+        "複製": ("⧉", "選択した要素を複製"),
+        "削除": ("×", "選択した要素を削除 (Delete)"),
+        "Androidへ転送": ("⇧", "プリセットをAndroid端末へ転送"),
+    }
+
+    @staticmethod
+    def display(label):
+        icon, _description = ToolbarPresentation.ITEMS[label]
+        return f"{icon} {label}"
+
+    @staticmethod
+    def tooltip(label):
+        _icon, description = ToolbarPresentation.ITEMS[label]
+        return description
 
 
 class EditorCommandCatalog:
@@ -74,6 +101,16 @@ class EditorCommandCatalog:
         return (
             ("グループ化", owner.cmd_group_selection, ""),
             ("グループ解除", owner.cmd_ungroup_selection, ""),
+            (None, None, ""),
+            ("左揃え", owner.cmd_align_left, ""),
+            ("水平方向中央揃え", owner.cmd_align_center_horizontal, ""),
+            ("右揃え", owner.cmd_align_right, ""),
+            ("上揃え", owner.cmd_align_top, ""),
+            ("垂直方向中央揃え", owner.cmd_align_center_vertical, ""),
+            ("下揃え", owner.cmd_align_bottom, ""),
+            (None, None, ""),
+            ("水平方向に均等配置", owner.cmd_distribute_horizontal, ""),
+            ("垂直方向に均等配置", owner.cmd_distribute_vertical, ""),
             (None, None, ""),
             ("背面へ", lambda: owner.cmd_move(-1), ""),
             ("前面へ", lambda: owner.cmd_move(1), ""),
@@ -155,17 +192,21 @@ class PrimaryToolbarBuilder:
         separator.pack(side="left", fill="y", padx=6)
 
     def _button(self, toolbar, label, command):
-        button = ttk.Button(toolbar, text=label, command=command)
+        text = ToolbarPresentation.display(label)
+        button = ttk.Button(toolbar, text=text, command=command)
         button.pack(side="left", padx=2)
+        Tooltip(button, ToolbarPresentation.tooltip(label))
         self._remember_history_button(label, button)
 
     def _menu_button(self, toolbar, label, entries):
-        button = ttk.Menubutton(toolbar, text=f"{label} ▼")
+        text = ToolbarPresentation.display(label)
+        button = ttk.Menubutton(toolbar, text=f"{text} ▼")
         menu = tk.Menu(button, tearoff=False)
         for entry in entries:
             EditorMenuBuilder._entry(menu, entry)
         button.configure(menu=menu)
         button.pack(side="left", padx=2)
+        Tooltip(button, ToolbarPresentation.tooltip(label))
 
     def _remember_history_button(self, label, button):
         owner = self._owner
