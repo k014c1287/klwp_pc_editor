@@ -1,6 +1,8 @@
 """Drive live time and manual 24-hour scrubbing in the preview."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    time,
+)
 from ..preview.timeline import PreviewTimeline
 
 

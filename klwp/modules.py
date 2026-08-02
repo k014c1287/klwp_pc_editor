@@ -1,6 +1,6 @@
 ﻿"""KLWP editor core responsibility."""
 
-from .runtime import *  # noqa: F401,F403
+from .runtime import copy
 from .formula import sample_eval
 
 

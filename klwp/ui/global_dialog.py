@@ -1,6 +1,9 @@
 """Edit all KLWP global variable types without discarding unknown fields."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    APP_TITLE, copy, messagebox, re,
+    tk, ttk,
+)
 from .color_control import KlwpColor
 
 

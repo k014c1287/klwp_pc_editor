@@ -1,6 +1,8 @@
 """Render a Komponent as one uniformly scaled child layer."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    Image, Resampling,
+)
 
 
 class ComponentRendererMixin:

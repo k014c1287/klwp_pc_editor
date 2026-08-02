@@ -1,6 +1,5 @@
 """Editor-facing facade for animation, event and switch settings."""
 
-from ..shared import *  # noqa: F401,F403
 from .setting_forms import AnimationFormDialog, EventFormDialog
 from .setting_lists import ModuleSettingListDialog
 from .setting_values import SwitchReferenceCounter, switch_global_names

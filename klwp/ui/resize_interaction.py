@@ -1,7 +1,6 @@
 """Connect resize geometry to preview mouse interaction."""
 
 from ..resize import ResizeHandleSet, ResizeSession
-from ..shared import *  # noqa: F401,F403
 
 
 class ResizeInteractionMixin:

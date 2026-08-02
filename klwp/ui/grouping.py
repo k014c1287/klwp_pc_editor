@@ -1,6 +1,10 @@
 """Create and dissolve static OverlapLayer groups without visual jumps."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    make_module,
+)
+from ..commands import GroupModulesCommand, UngroupModulesCommand
+from .command_execution import execute_editor_command
 
 
 POSITION_NAMES = {
@@ -122,13 +126,9 @@ class GroupingMixin:
         group["viewgroup_items"] = items
         for item, bounds in zip(items, item_bounds):
             GroupPosition.inside(item, bounds, group_bounds)
-        selection.remove_all()
         self._position_group(group, group_bounds, parent)
-        parent.insert(insertion_index, group)
-        self._select_modules((group,))
-        self._mark_dirty()
-        self._refresh_all(select=group)
-        self._set_status(f"{len(items)}件の要素をグループ化しました")
+        command = GroupModulesCommand(parent, items, group, insertion_index)
+        execute_editor_command(self, command)
 
     def _position_group(self, group, group_bounds, parent):
         archive = self.memory["archive"]
@@ -163,14 +163,10 @@ class GroupingMixin:
             return
         parent = selection.parent()
         insertion_index = parent.index(group)
-        parent.remove(group)
         self._position_ungrouped(children, child_bounds, parent)
-        for offset, child in enumerate(children):
-            parent.insert(insertion_index + offset, child)
-        self._select_modules(children)
-        self._mark_dirty()
-        self._refresh_all(select=tuple(children))
-        self._set_status(f"{len(children)}件の要素へグループ解除しました")
+        command = UngroupModulesCommand(
+            parent, group, children, insertion_index)
+        execute_editor_command(self, command)
 
     def _position_ungrouped(self, children, child_bounds, parent):
         archive = self.memory["archive"]

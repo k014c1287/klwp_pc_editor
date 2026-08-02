@@ -1,6 +1,8 @@
 """Measure and place KLWP modules in document coordinates."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    _DF, _as_number, math, sample_eval,
+)
 from .layout_context import LayoutRequest
 from .placement import PlacementCalculator
 

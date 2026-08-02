@@ -1,6 +1,8 @@
 """Present a responsive zoom from the last high-quality render."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    ImageTk,
+)
 from ..preview.zoom import CachedPreviewImage
 
 

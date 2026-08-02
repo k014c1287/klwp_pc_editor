@@ -1,6 +1,9 @@
 """Handle preview animation, taps, swipes and canvas dragging."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    APP_TITLE, messagebox, re, simpledialog,
+    time,
+)
 from ..positioning import PositionMutation
 from ..preview.pages import PresetPageCount
 from ..snap import SnapEngine, SnapTargets

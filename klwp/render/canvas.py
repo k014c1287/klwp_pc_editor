@@ -1,6 +1,9 @@
 """Render the document into Pillow and present it on the Tk canvas."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    HAS_PIL, Image, ImageFont, ImageTk,
+    io,
+)
 from ..preview.zoom import PreviewZoom
 from ..resize import ResizeHandleSet
 from .guides import CanvasGuideMixin

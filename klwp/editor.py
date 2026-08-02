@@ -1,6 +1,8 @@
-﻿"""Composition root for the desktop editor window."""
+"""Composition root for the desktop editor window."""
 
-from .shared import *  # noqa: F401,F403
+from .shared import (
+    HAS_TK, tk,
+)
 from .ui.bootstrap import BootstrapMixin
 from .ui.document import DocumentMixin
 from .preview.model import PreviewModelMixin
@@ -15,22 +17,15 @@ from .ui.interaction import InteractionMixin
 from .ui.settings import SettingsMixin
 from .ui.properties import PropertyPanelMixin
 from .ui.preview_values import PreviewValuesMixin
-from .ui.adb_transfer import AdbTransferMixin
 from .ui.tree_drag import TreeDragMixin
 from .ui.multi_selection import MultiSelectionMixin
 from .ui.grouping import GroupingMixin
 from .ui.zoom import PreviewZoomMixin
-from .ui.export_png import PngExportMixin
-from .ui.command_palette import CommandPaletteMixin
-from .ui.layer_actions import LayerActionsMixin
-from .ui.alignment import AlignmentMixin
-from .ui.time_preview import TimePreviewMixin
 
 
 if HAS_TK:
     class EditorApp(BootstrapMixin,
             MultiSelectionMixin,
-            LayerActionsMixin,
             GroupingMixin,
             DocumentMixin,
             PreviewModelMixin,
@@ -45,13 +40,8 @@ if HAS_TK:
             SettingsMixin,
             PropertyPanelMixin,
             PreviewValuesMixin,
-            AdbTransferMixin,
             TreeDragMixin,
             PreviewZoomMixin,
-            PngExportMixin,
-            CommandPaletteMixin,
-            AlignmentMixin,
-            TimePreviewMixin,
             tk.Tk):
         CANVAS_W, CANVAS_H = 420, 760
         HISTORY_LIMIT = 50

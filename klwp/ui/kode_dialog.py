@@ -1,6 +1,9 @@
 """Live editing, validation, completion and preview for KLWP Kode."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    APP_TITLE, eval_formula, json, messagebox,
+    re, tk, ttk,
+)
 
 
 SUPPORTED_KODE_FUNCTIONS = (

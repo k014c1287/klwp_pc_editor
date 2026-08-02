@@ -1,6 +1,8 @@
 """List editors for animations and tap events attached to one module."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    copy, module_label, tk, ttk,
+)
 
 
 class ModuleSettingListDialog:

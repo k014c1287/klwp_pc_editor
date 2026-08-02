@@ -1,8 +1,8 @@
 """Commands for aligning and distributing selected modules."""
 
-from ..shared import *  # noqa: F401,F403
 from ..alignment import AlignmentLayout
-from ..positioning import PositionMutation
+from ..commands import ArrangeModulesCommand
+from .command_execution import execute_editor_command
 
 
 class AlignmentMixin:
@@ -69,10 +69,5 @@ class AlignmentMixin:
         archive = self.memory["archive"]
         root_items = archive.modules()
         parent = selection.parent()
-        for item, horizontal, vertical in movements:
-            mutation = PositionMutation(item, parent is root_items)
-            mutation.move_by(horizontal, vertical)
-        self._mark_dirty()
-        self._render()
-        self._build_props()
-        self._set_status(f"{selection.count()}件を{label}しました")
+        command = ArrangeModulesCommand(movements, root_items, parent, label)
+        execute_editor_command(self, command)

@@ -1,6 +1,8 @@
 """Reusable visual editor for KLWP AARRGGBB colors."""
 
-from ..shared import *  # noqa: F401,F403
+from ..shared import (
+    colorchooser, tk, ttk,
+)
 
 
 class KlwpColor:
