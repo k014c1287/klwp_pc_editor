@@ -25,7 +25,7 @@ DEFAULT_PREVIEW_VALUES = {
     "resource": {"cused": 42.0, "fstot": 256.0, "fsfree": 59.0},
     "calendar": {"title": "学校"},
     "astronomy": {"seasonc": "SPRING"},
-    "broadcast": {"gpt_ans": "Preview broadcast value"},
+    "broadcast": {"gpt_ans": ""},
 }
 
 
@@ -50,6 +50,7 @@ PREVIEW_VALUE_FIELDS = (
     ("network", "ssid", "SSID"),
     ("calendar", "title", "次の予定"),
     ("astronomy", "seasonc", "季節"),
+    ("broadcast", "gpt_ans", "Broadcast / Tasker値"),
 )
 
 

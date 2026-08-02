@@ -13,6 +13,7 @@ from klwp.ui.property_panel import AnchorChoices, PropertyPanelBuilder
 from klwp.ui.color_control import KlwpColor
 from klwp.resize import ResizeHandleSet, ResizeSession
 from klwp.positioning import KeyboardNudge, PositionMutation
+from klwp.alignment import AlignmentLayout
 from klwp.snap import SnapEngine, SnapTargets
 from klwp.background import BackgroundImageBinding, BitmapGlobalCollection
 from klwp.icons import IconCatalog, MATERIAL_ICON_SET
@@ -26,21 +27,32 @@ from klwp.ui.document import DocumentMixin
 from klwp.ui.interaction import InteractionMixin
 from klwp.ui.multi_selection import MultiSelectionMixin
 from klwp.ui.grouping import GroupingMixin
-from klwp.ui.menu_toolbar import EditorCommandCatalog
+from klwp.ui.alignment import AlignmentMixin
+from klwp.ui.menu_toolbar import EditorCommandCatalog, ToolbarPresentation
+from klwp.ui.theme import EditorPalette, EditorTheme
 from klwp.ui.window import EditorWindowBuilder
 from klwp.adb import AdbDevices, AdbTransfer
 from klwp.preview.pages import PresetPageCount, PreviewPageCounter
+from klwp.preview.values import PREVIEW_VALUE_FIELDS, default_preview_values
 from klwp.pixel_diff import (
     ComparableImages, ComparisonRegion, PixelDiff, PixelDiffThresholds,
     PresetPreview)
 from klwp.runtime import Resampling
 from klwp.preview.zoom import CachedPreviewImage, PreviewPan, PreviewZoom
-from klwp.ui.tree import ModuleTreePresentation
+from klwp.recent import RecentFileStore
+from klwp.preview.timeline import PreviewTimeline
+from klwp.ui.tree import ModuleTreePresentation, ModuleVisibility
 from klwp.ui.tree_drag import TreeDragMixin, TreeReorder
 from klwp.clipboard import ModuleClipboard
 from klwp.selection import ModuleSelection
 from klwp.ui.zoom import PreviewZoomMixin
 from klwp.ui.export_png import PngExportMixin
+from klwp.ui.command_palette import (
+    CommandPaletteDialog, CommandPaletteEntries,
+)
+from klwp.ui.layer_actions import LayerActionsMixin
+from klwp.ui.welcome import TemplateCatalog
+from klwp.ui.time_preview import TimePreviewMixin
 
 
 ROOT = Path(__file__).resolve().parent
@@ -51,7 +63,19 @@ class _TreeEditor(DocumentMixin, TreeDragMixin):
     pass
 
 
-class _MultiEditor(MultiSelectionMixin, GroupingMixin, DocumentMixin):
+class _MultiEditor(
+        MultiSelectionMixin, GroupingMixin, AlignmentMixin, DocumentMixin):
+    def _set_status(self, text):
+        self.memory["last_status"] = text
+
+
+class _TimeEditor(TimePreviewMixin):
+    def _set_status(self, text):
+        self.memory["last_status"] = text
+
+
+class _LayerEditor(
+        MultiSelectionMixin, LayerActionsMixin, DocumentMixin):
     def _set_status(self, text):
         self.memory["last_status"] = text
 
@@ -101,6 +125,17 @@ class FormulaTests(unittest.TestCase):
         self.assertEqual(ke.eval_formula("$wi(temp)$", values), -3.0)
         self.assertEqual(ke.eval_formula("$mi(title)$", values), "Edited Song")
         self.assertEqual(ke.eval_formula("$li(loc)$", values), "Sapporo")
+
+    def test_broadcast_value_is_blank_until_explicitly_entered(self):
+        values = {"__preview__": {"broadcast": {"gpt_ans": "回答"}}}
+
+        self.assertEqual(ke.eval_formula("$br(tasker, gpt_ans)$"), "")
+        self.assertEqual(
+            ke.eval_formula("$br(tasker, gpt_ans)$", values), "回答")
+        self.assertEqual(default_preview_values()["broadcast"]["gpt_ans"], "")
+        self.assertIn(
+            ("broadcast", "gpt_ans", "Broadcast / Tasker値"),
+            PREVIEW_VALUE_FIELDS)
 
     def test_kode_live_editor_reports_structural_errors(self):
         self.assertEqual(KodeSyntax.problem("$if(1, yes, no)$"), "")
@@ -383,8 +418,94 @@ class ModuleTreeTests(unittest.TestCase):
 
         self.assertEqual(ModuleTreePresentation.title(hidden), "panel")
         self.assertEqual(ModuleTreePresentation.kind(hidden), "図形")
+        self.assertEqual(ModuleTreePresentation.visibility(hidden), "○")
         self.assertEqual(ModuleTreePresentation.priority(2, 3), "1・最前面")
         self.assertEqual(ModuleTreePresentation.tags(hidden), ("hidden",))
+
+    def test_visibility_column_click_toggles_one_item_and_records_history(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        item = ke.make_module("shape")
+        archive.modules().append(item)
+        tree = Mock()
+        tree.identify_column.return_value = "#1"
+        tree.identify_row.return_value = "item"
+        editor = _LayerEditor()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory["archive"] = archive
+        editor.memory["tree"] = tree
+        editor.memory["tree_map"] = {
+            "item": (item, archive.modules()),
+        }
+        editor._mark_dirty = Mock()
+        editor._refresh_all = Mock()
+        event = type("Event", (), {"x": 10, "y": 20})()
+
+        result = editor._on_tree_visibility_click(event)
+
+        self.assertEqual(result, "break")
+        self.assertFalse(item["config_visible"])
+        tree.selection_set.assert_called_once_with("item")
+        editor._mark_dirty.assert_called_once_with()
+        editor._refresh_all.assert_called_once_with(select=(item,))
+
+    def test_visibility_command_hides_mixed_multi_selection(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        first = ke.make_module("shape")
+        second = ke.make_module("text")
+        second["config_visible"] = False
+        archive.modules().extend((first, second))
+        tree = Mock()
+        tree.selection.return_value = ("first", "second")
+        tree.focus.return_value = "second"
+        editor = _LayerEditor()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory["archive"] = archive
+        editor.memory["tree"] = tree
+        editor.memory["tree_map"] = {
+            "first": (first, archive.modules()),
+            "second": (second, archive.modules()),
+        }
+        editor._mark_dirty = Mock()
+        editor._refresh_all = Mock()
+
+        editor.cmd_toggle_visibility()
+
+        self.assertFalse(ModuleVisibility(first).shown())
+        self.assertFalse(ModuleVisibility(second).shown())
+        editor._mark_dirty.assert_called_once_with()
+
+    def test_context_menu_contains_direct_layer_actions(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        item = ke.make_module("shape")
+        archive.modules().append(item)
+        tree = Mock()
+        tree.identify_row.return_value = "item"
+        tree.selection.return_value = ("item",)
+        tree.focus.return_value = "item"
+        editor = _LayerEditor()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory["archive"] = archive
+        editor.memory["tree"] = tree
+        editor.memory["tree_map"] = {
+            "item": (item, archive.modules()),
+        }
+        event = type(
+            "Event", (), {"y": 20, "x_root": 100, "y_root": 200})()
+        menu = Mock()
+
+        with patch("klwp.ui.layer_actions.tk.Menu", return_value=menu):
+            result = editor._on_tree_context_menu(event)
+
+        labels = tuple(
+            call.kwargs["label"] for call in menu.add_command.call_args_list)
+        self.assertEqual(result, "break")
+        self.assertEqual(labels, (
+            "非表示にする", "複製", "削除", "背面へ", "前面へ"))
+        menu.tk_popup.assert_called_once_with(100, 200)
+        menu.grab_release.assert_called_once_with()
 
     def test_clearing_layer_selection_restores_root_add_target(self):
         archive = ke.KlwpArchive()
@@ -648,6 +769,116 @@ class PngExportTests(unittest.TestCase):
         editor._export_png.assert_called_once_with("chosen.png")
 
 
+class CommandPaletteTests(unittest.TestCase):
+    def test_palette_filters_menu_commands_by_label_and_category(self):
+        groups = EditorCommandCatalog(Mock()).menu_groups()
+        entries = CommandPaletteEntries(groups)
+
+        save_labels = entries.filtered("保存").labels()
+        device_labels = entries.filtered("デバイス").labels()
+
+        self.assertEqual(save_labels, (
+            "ファイル › 保存", "ファイル › 名前を付けて保存"))
+        self.assertEqual(device_labels, ("デバイス › Androidへ転送",))
+        self.assertNotIn("編集 › None", entries.labels())
+
+    def test_palette_executes_selected_command_and_closes(self):
+        command = Mock()
+        groups = (("テスト", (("実行", command, ""),)),)
+        entries = CommandPaletteEntries(groups)
+        dialog = CommandPaletteDialog(Mock(), entries)
+        listing = Mock()
+        listing.curselection.return_value = (0,)
+        window = Mock()
+        dialog._state["list"] = listing
+        dialog._state["window"] = window
+
+        result = dialog._execute()
+
+        self.assertEqual(result, "break")
+        window.destroy.assert_called_once_with()
+        command.assert_called_once_with()
+
+
+class AlignmentTests(unittest.TestCase):
+    def test_alignment_uses_outer_selection_edges_and_centers(self):
+        entries = (
+            ("first", (10.0, 10.0, 20.0, 20.0)),
+            ("second", (50.0, 20.0, 10.0, 40.0)),
+        )
+        layout = AlignmentLayout(entries)
+
+        horizontal = layout.movements("center_horizontal")
+        vertical = layout.movements("center_vertical")
+
+        self.assertEqual(horizontal, (
+            ("first", 15.0, 0.0), ("second", -20.0, 0.0)))
+        self.assertEqual(vertical, (
+            ("first", 0.0, 15.0), ("second", 0.0, -5.0)))
+
+    def test_distribution_keeps_outer_items_and_equalizes_gaps(self):
+        entries = (
+            ("first", (0.0, 0.0, 10.0, 10.0)),
+            ("second", (20.0, 5.0, 10.0, 10.0)),
+            ("third", (60.0, 30.0, 20.0, 10.0)),
+        )
+
+        movements = AlignmentLayout(entries).movements(
+            "distribute_horizontal")
+
+        self.assertEqual(movements, (
+            ("first", 0.0, 0.0),
+            ("second", 10.0, 0.0),
+            ("third", 0.0, 0.0)))
+
+    def test_align_command_updates_root_offsets_and_records_once(self):
+        archive = ke.KlwpArchive()
+        archive.new()
+        first = ke.make_module("shape")
+        second = ke.make_module("shape")
+        for item, horizontal in ((first, 10.0), (second, 50.0)):
+            item["position_anchor"] = "TOPLEFT"
+            item["position_offset_x"] = horizontal
+            item["position_offset_y"] = 20.0
+        archive.modules().extend((first, second))
+        editor = _MultiEditor()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory["archive"] = archive
+        editor.memory["tree"] = Mock()
+        editor.memory["tree"].selection.return_value = ("first", "second")
+        editor.memory["tree"].focus.return_value = "second"
+        editor.memory["tree_map"] = {
+            "first": (first, archive.modules()),
+            "second": (second, archive.modules()),
+        }
+        editor._bounds = lambda item: (
+            (10.0, 20.0, 20.0, 20.0) if item is first
+            else (50.0, 20.0, 20.0, 20.0))
+        editor._mark_dirty = Mock()
+        editor._render = Mock()
+        editor._build_props = Mock()
+
+        editor.cmd_align_left()
+
+        self.assertEqual(first["position_offset_x"], 10.0)
+        self.assertEqual(second["position_offset_x"], 10.0)
+        editor._mark_dirty.assert_called_once_with()
+        editor._render.assert_called_once_with()
+
+    def test_distribution_requires_three_items_in_same_layer(self):
+        editor = _MultiEditor()
+        editor._module_selection = Mock()
+        selection = editor._module_selection.return_value
+        selection.count.return_value = 2
+        selection.same_parent.return_value = True
+        editor._set_status = Mock()
+
+        editor.cmd_distribute_horizontal()
+
+        editor._set_status.assert_called_once_with(
+            "同じレイヤー内の要素を3件以上選択してください")
+
+
 class MenuToolbarTests(unittest.TestCase):
     def test_menu_groups_keep_every_toolbar_command_available(self):
         groups = EditorCommandCatalog(Mock()).menu_groups()
@@ -660,9 +891,16 @@ class MenuToolbarTests(unittest.TestCase):
             "ファイル": (
                 "新規", "開く", "保存", "名前を付けて保存",
                 "PNGを書き出す…"),
-            "編集": ("元に戻す", "やり直す", "コピー", "貼付", "複製", "削除"),
+            "編集": (
+                "元に戻す", "やり直す", "コピー", "貼付", "複製", "削除",
+                "コマンドパレット…"),
             "追加": ("テキスト", "図形", "アイコン", "画像", "レイヤー"),
-            "配置": ("グループ化", "グループ解除", "背面へ", "前面へ"),
+            "配置": (
+                "グループ化", "グループ解除",
+                "左揃え", "水平方向中央揃え", "右揃え",
+                "上揃え", "垂直方向中央揃え", "下揃え",
+                "水平方向に均等配置", "垂直方向に均等配置",
+                "背面へ", "前面へ"),
             "プロジェクト": (
                 "グローバル管理", "プレビュー値",
                 "背景設定", "画像管理", "端末解像度"),
@@ -680,6 +918,102 @@ class MenuToolbarTests(unittest.TestCase):
         self.assertEqual(
             sum(item[0] == "separator" for item in items), 4)
 
+    def test_toolbar_presentation_keeps_labels_and_explains_actions(self):
+        labels = ("新規", "保存", "元に戻す", "削除", "Androidへ転送")
+        for label in labels:
+            self.assertIn(label, ToolbarPresentation.display(label))
+            self.assertTrue(ToolbarPresentation.tooltip(label))
+
+    def test_dark_theme_configures_ttk_and_tk_widgets(self):
+        owner = Mock()
+        style = Mock()
+        style.theme_names.return_value = ("vista", "clam")
+        palette = EditorPalette.colors()
+
+        with patch("klwp.ui.theme.ttk.Style", return_value=style):
+            EditorTheme(owner).apply()
+
+        style.theme_use.assert_called_once_with("clam")
+        style.configure.assert_any_call(
+            "TFrame", background=palette["background"])
+        style.map.assert_any_call(
+            "Treeview", background=[("selected", palette["accent"])],
+            foreground=[("selected", "#ffffff")])
+        owner.configure.assert_called_once_with(
+            background=palette["background"])
+        self.assertGreaterEqual(owner.option_add.call_count, 8)
+
+
+class WelcomeAndRecentFileTests(unittest.TestCase):
+    def test_recent_files_are_deduplicated_and_missing_files_are_removed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            storage = root / "recent.json"
+            first = root / "first.klwp"
+            second = root / "second.klwp"
+            first.write_bytes(b"first")
+            second.write_bytes(b"second")
+            store = RecentFileStore(storage)
+            store.remember(first)
+            store.remember(second)
+            store.remember(first)
+            second.unlink()
+
+            self.assertEqual(store.paths(), (str(first.resolve()),))
+
+    def test_recent_store_recovers_from_invalid_json(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            storage = Path(temporary) / "recent.json"
+            storage.write_text("not-json", encoding="utf-8")
+
+            self.assertEqual(RecentFileStore(storage).paths(), ())
+
+    def test_template_catalog_only_lists_klwp_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "b.klwp").write_bytes(b"b")
+            (root / "a.klwp").write_bytes(b"a")
+            (root / "note.txt").write_text("ignore", encoding="utf-8")
+
+            names = tuple(path.name for path in TemplateCatalog(root).entries())
+
+            self.assertEqual(names, ("a.klwp", "b.klwp"))
+
+    def test_template_open_forces_save_as_without_recent_history(self):
+        editor = _TreeEditor()
+        editor.memory = ke.ApplicationMemory()
+        archive = ke.KlwpArchive()
+        archive.new()
+        archive["path"] = "sample/example.klwp"
+        editor.memory["archive"] = archive
+        editor.memory["status"] = Mock()
+        editor._confirm_discard = Mock(return_value=True)
+        editor._open_archive_path = Mock(return_value=True)
+        editor._update_title = Mock()
+
+        opened = editor.cmd_open_template("sample/example.klwp")
+
+        self.assertTrue(opened)
+        self.assertIsNone(archive["path"])
+        editor._open_archive_path.assert_called_once_with(
+            "sample/example.klwp", False)
+
+    def test_normal_open_records_recent_file_after_success(self):
+        editor = _TreeEditor()
+        editor.memory = ke.ApplicationMemory()
+        editor.memory["archive"] = {
+            "preset": {"preset_info": {"ts": 123}}}
+        editor.memory["recent_files"] = Mock()
+        editor._load_archive = Mock(return_value=True)
+        editor._apply_document_dimensions = Mock()
+        editor._after_document_loaded = Mock()
+
+        opened = editor._open_archive_path("work.klwp", True)
+
+        self.assertTrue(opened)
+        editor.memory["recent_files"].remember.assert_called_once_with(
+            "work.klwp")
+
 
 class KeyboardShortcutTests(unittest.TestCase):
     def test_control_z_and_control_y_bind_to_history_commands(self):
@@ -693,6 +1027,8 @@ class KeyboardShortcutTests(unittest.TestCase):
             "<Control-y>", owner._on_redo_shortcut)
         owner.bind_all.assert_any_call(
             "<Control-Shift-Z>", owner._on_redo_shortcut)
+        owner.bind_all.assert_any_call(
+            "<Control-k>", owner._on_command_palette_shortcut)
         for key in ("Left", "Right", "Up", "Down"):
             owner.bind_all.assert_any_call(
                 f"<{key}>", owner._on_nudge_shortcut)
@@ -736,6 +1072,63 @@ class KeyboardShortcutTests(unittest.TestCase):
         nudge.apply_to(mutation)
 
         mutation.move_by.assert_called_once_with(-1.0, 0.0)
+
+
+class PreviewTimeTests(unittest.TestCase):
+    def test_timeline_changes_time_without_changing_date(self):
+        source = datetime(2026, 7, 22, 8, 15, 30)
+        timestamp = source.timestamp() * 1000.0
+
+        changed = PreviewTimeline(timestamp).at_hour(18.5)
+        actual = datetime.fromtimestamp(changed / 1000.0)
+
+        self.assertEqual(actual.date(), source.date())
+        self.assertEqual((actual.hour, actual.minute), (18, 30))
+
+    def test_manual_scrubbing_stops_live_mode_and_renders(self):
+        editor = _TimeEditor()
+        editor.memory = ke.ApplicationMemory()
+        live = Mock()
+        variable = Mock()
+        label = Mock()
+        source = datetime(2026, 7, 22, 8, 0).timestamp() * 1000.0
+        editor.memory["preview_ts"] = source
+        editor.memory["preview_time_live_var"] = live
+        editor.memory["preview_time_var"] = variable
+        editor.memory["preview_time_label"] = label
+        editor.memory["_time_after_id"] = "timer"
+        editor.memory["_updating_time_control"] = False
+        editor.after_cancel = Mock()
+        editor._render = Mock()
+
+        editor._on_preview_time_changed("18.5")
+
+        actual = datetime.fromtimestamp(editor.memory["preview_ts"] / 1000.0)
+        self.assertEqual((actual.hour, actual.minute), (18, 30))
+        live.set.assert_called_once_with(False)
+        editor.after_cancel.assert_called_once_with("timer")
+        editor._render.assert_called_once_with()
+        label.configure.assert_called_with(text="18:30:00")
+
+    def test_live_tick_uses_current_time_and_schedules_one_second(self):
+        editor = _TimeEditor()
+        editor.memory = ke.ApplicationMemory()
+        live = Mock()
+        live.get.return_value = True
+        editor.memory["preview_time_live_var"] = live
+        editor.memory["preview_ts"] = 0
+        editor.memory["_time_after_id"] = "previous"
+        editor.memory["_updating_time_control"] = False
+        editor.after = Mock(return_value="next")
+        editor._render = Mock()
+
+        with patch("klwp.ui.time_preview.time.time", return_value=100.5):
+            editor._time_tick()
+
+        self.assertEqual(editor.memory["preview_ts"], 100500)
+        editor.after.assert_called_once_with(1000, editor._time_tick)
+        self.assertEqual(editor.memory["_time_after_id"], "next")
+        editor._render.assert_called_once_with()
 
 
 class PreviewPageTests(unittest.TestCase):

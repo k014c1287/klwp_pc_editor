@@ -27,17 +27,45 @@ class DocumentLifecycleMixin:
 
     def cmd_open(self):
         if not self._confirm_discard():
-            return
+            return False
         path = filedialog.askopenfilename(
             filetypes=[("KLWP preset", "*.klwp"), ("All files", "*.*")])
         if not path:
-            return
+            return False
+        return self._open_archive_path(path, True)
+
+    def cmd_open_path(self, path):
+        if not self._confirm_discard():
+            return False
+        return self._open_archive_path(path, True)
+
+    def cmd_open_template(self, path):
+        if not self._confirm_discard():
+            return False
+        if not self._open_archive_path(path, False):
+            return False
+        self.memory['archive']["path"] = None
+        self._update_title()
+        self.memory['status'].config(text="サンプルを別名保存用に開きました")
+        return True
+
+    def _open_archive_path(self, path, remember):
         if not self._load_archive(path):
-            return
+            return False
         information = self.memory['archive']["preset"].get("preset_info", {})
         self._apply_document_dimensions(information)
         self.memory['preview_ts'] = information.get("ts")
         self._after_document_loaded()
+        if remember:
+            self._remember_recent(path)
+        return True
+
+    def _remember_recent(self, path):
+        memory = self.memory
+        store = memory.optional("recent_files")
+        if store is None:
+            return
+        store.remember(path)
 
     def _load_archive(self, path):
         try:
@@ -88,6 +116,7 @@ class DocumentLifecycleMixin:
 
     def _save_archive(self, path):
         self.memory['archive'].save(path)
+        self._remember_recent(path)
         self.memory['history'].saved(self._snapshot_archive())
         self.memory['dirty'] = False
         self._update_history_ui()

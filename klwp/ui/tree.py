@@ -3,6 +3,27 @@
 from ..shared import MODULE_LABELS, module_label
 
 
+class ModuleVisibility:
+    def __init__(self, item):
+        self._item = item
+
+    def shown(self):
+        item = self._item
+        value = item.get("config_visible", True)
+        text = str(value)
+        return value is not False and text.lower() != "false"
+
+    def symbol(self):
+        if self.shown():
+            return "●"
+        return "○"
+
+    @staticmethod
+    def toggled_value(items):
+        states = map(lambda item: ModuleVisibility(item).shown(), items)
+        return not any(states)
+
+
 class ModuleTreePresentation:
     @staticmethod
     def title(item):
@@ -24,9 +45,12 @@ class ModuleTreePresentation:
         return str(rank)
 
     @staticmethod
+    def visibility(item):
+        return ModuleVisibility(item).symbol()
+
+    @staticmethod
     def tags(item):
-        visible = item.get("config_visible", True)
-        if visible is False or str(visible).lower() == "false":
+        if not ModuleVisibility(item).shown():
             return ("hidden",)
         return ()
 
@@ -63,7 +87,7 @@ class ModuleTreeBuilder:
         presentation = ModuleTreePresentation
         identifier = tree.insert(
             parent_identifier, "end", text=presentation.title(item),
-            values=(presentation.kind(item),
+            values=(presentation.visibility(item), presentation.kind(item),
                     presentation.priority(index, len(siblings))),
             tags=presentation.tags(item),
             open=parent_identifier == "" and bool(item.get("viewgroup_items")))

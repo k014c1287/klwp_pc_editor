@@ -110,7 +110,8 @@ class PreviewValuesDialog:
                 APP_TITLE, "日時は YYYY-MM-DD HH:MM:SS 形式で入力してください。",
                 parent=self._context["window"])
             return False
-        owner.memory["preview_ts"] = int(date_time.timestamp() * 1000)
+        timestamp = int(date_time.timestamp() * 1000)
+        owner._set_manual_preview_timestamp(timestamp)
         return True
 
 
